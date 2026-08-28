@@ -1,0 +1,16 @@
+{
+  "description": "ani — deterministic correction-signal and success-pattern hints on prompt submit (Tier 1 adapter; the core skill works without it).",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/ani_trigger.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
