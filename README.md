@@ -1,12 +1,21 @@
-# ani
+# ani — Agent Negative Index
 
-**the no-that's-not-it protocol**
+**the no-that's-not-it protocol · a resolution loop for negative feedback**
 
-`ani` is Korean 아니 — "no". It comes from **"아니 그게 아니라…"** ("no, that's not it…"),
-the sentence every developer eventually says to their coding agent. ani is a file-based,
-agent-agnostic protocol that takes that moment seriously: it captures the correction,
-compiles it into a verified success pattern, and makes the polluted context that produced
-the failure safe to throw away.
+`ani` carries a double meaning:
+
+- **Agent Negative Index** — an index of your agent's negatives: every "no, that's not it"
+  moment, captured, compiled into verified patterns, and consulted before the mistake can
+  repeat. As in negative indexing — `history[-1]` — it reads backward from the last failure
+  in order to move forward.
+- Korean **아니** ("no"), from **"아니 그게 아니라…"** ("no, that's not it…") — the sentence
+  every developer eventually says to their coding agent.
+
+ani is a file-based, agent-agnostic protocol that takes that moment seriously: it captures
+the correction, compiles it into a verified success pattern, and makes the polluted context
+that produced the failure safe to throw away. It is not a phrase detector for one language —
+it is a universal loop in which negative feedback gets *resolved*: any language, any harness,
+any kind of correction.
 
 Open source, no server, no vendor lock-in. If your agent can read and write files, it can
 speak ani.
