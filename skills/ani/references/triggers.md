@@ -139,7 +139,7 @@ compile conservatively.
 ## Adding project phrases
 
 Teams develop their own idioms ("again with the mock data", "그거 말고 저거").
-Register them in `.ani/config.md`:
+Register them in the store's `config.md`:
 
 ```markdown
 ---
@@ -153,7 +153,7 @@ Rules for `triggers_extra`:
 
 - Hints only. They raise recall for hooks and for you; they never override the
   semantic judgement, and a listed phrase still has to *mean* a correction.
-- Harvest them from real `trigger_quote` values in `.ani/patterns/F-*.md`,
+- Harvest them from real `trigger_quote` values in `<store>/patterns/F-*.md`,
   not from imagination.
 - Keep them short and distinctive. A phrase common in normal conversation
   ("아니") produces false positives for the deterministic adapters, which cannot

@@ -1,1 +1,6 @@
 * text=auto eol=lf
+
+# The hook launcher is a cmd/bash polyglot: bash refuses a CRLF heredoc
+# delimiter, so this file must stay LF even on a Windows checkout.
+*.cmd text eol=lf
+hooks/** text eol=lf

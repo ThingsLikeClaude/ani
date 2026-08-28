@@ -1,5 +1,6 @@
 ---
-# Copy to .ani/patterns/S-<slug>.md, then fill in and delete every comment line.
+# Copy to <store>/patterns/S-<slug>.md — the same store as the F it compiles.
+# Then fill in and delete every comment line.
 # Field spec: skills/ani/references/schemas.md
 id: S-<kebab-case-slug>       # must equal the filename without .md
 status: provisional           # provisional (auto, E>=T) | active (human-approved)
@@ -7,7 +8,10 @@ status: provisional           # provisional (auto, E>=T) | active (human-approve
 compiled_from: [F-YYYYMMDD-rand8er]   # never empty — a pattern needs a failure behind it
 date_compiled: YYYY-MM-DD     # from the `date` command
 keywords: [<domain>, <artifact>, <situation>]   # reuse the source F's vocabulary
-scope: project                # project | global  (global = manual promotion only)
+scope: project                # mirrors the store: project overlay -> project,
+                              # global store -> global. Moving a pattern between
+                              # stores is the user's explicit decision, never a
+                              # side effect of approval.
 summary: Use when <situation, in use-when form — this is the INDEX row a future
   agent matches against; name the situation, not the fix>
 ---

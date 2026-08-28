@@ -4,7 +4,7 @@ Everything in ani is a markdown file with YAML frontmatter. Headings and field
 names are **English** (so any agent, anywhere, parses the same store); field
 *values* may be in any language — quote the user verbatim.
 
-Encoding rules for every file in `.ani/`: UTF-8 without BOM, LF newlines, one
+Encoding rules for every file in a store: UTF-8 without BOM, LF newlines, one
 trailing newline.
 
 **Frontmatter is the source of truth. `INDEX.md` is a regenerable cache.**
@@ -13,9 +13,46 @@ is regenerated on the spot.
 
 ---
 
+## 0. Store layout — two tiers
+
+| Tier | Path | Availability | Holds |
+| --- | --- | --- | --- |
+| **global** (default) | `~/.ani/`, or the `global_store` path from config.md | Always. Created on first capture if absent. | Personal correction knowledge that follows the user across repos. The default sink. |
+| **project** (overlay) | `<repo>/.ani/` | Opt-in — exists only if someone created it. | Repo-local patterns, versioned with the repo and reviewed as PRs. |
+
+Both tiers have the identical layout, so every rule below applies unchanged to
+either one:
+
+```
+<store>/
+├── INDEX.md          # | id | status | scope | keywords | summary | updated |
+├── patterns/
+│   ├── F-<YYYYMMDD>-<rand8>.md
+│   └── S-<slug>.md
+└── config.md         # optional
+```
+
+- **Capture routing.** Facts limited to this repo's files or conventions go to
+  the project store when the overlay exists; the user's general working style
+  goes to the global store. **Ambiguous → global** (personal knowledge leaking
+  into a team repo is the more expensive mistake).
+- **Search and injection read both**, project first. Matching priority is
+  unchanged: current request > safety/permissions > project store S > global
+  store S. Inside a store, `active` outranks `provisional`. One id present in
+  both stores is one pattern — the project copy wins.
+- **Concurrency** is handled the same way in both: the `rand8` filename suffix
+  plus "INDEX is a regenerable cache" (§3). The global store is written by
+  several sessions at once and needs no lock for it.
+
+The default is `~/.ani` rather than a harness directory (`~/.claude/ani`) because
+any agent may participate (P4); a harness-specific location is a `global_store`
+override, not the default.
+
+---
+
 ## 1. F — failure pattern
 
-Path: `.ani/patterns/F-<YYYYMMDD>-<rand8>.md`
+Path: `<store>/patterns/F-<YYYYMMDD>-<rand8>.md`
 
 `<YYYYMMDD>` comes from the `date` command, never from memory. `<rand8>` is 8
 lowercase hex/alphanumeric characters; its only job is to make concurrent
@@ -32,6 +69,7 @@ sessions collision-free, so any random source is fine.
 | `session` | no | string | Harness-specific session reference. **Never load-bearing** — the `Excerpt` section must stand alone without it. |
 | `trigger_quote` | yes | quoted string | The user's correction, **verbatim**, in their language. One line; truncate long turns with `…` but never paraphrase. |
 | `keywords` | yes | list | 3–6 lowercase tokens for INDEX matching. Include the domain (`css`), the artifact (`background`), the situation (`dark-mode`). If this F is a counterexample to an S, include that S id. |
+| `recurrence` | no | integer ≥ 0 | **Advisory.** How many times this same failure class has come back since it was captured. Starts at `0`; at capture time, a new correction matching an existing captured F class (by INDEX keywords) increments *that* F instead of opening a duplicate. It orders the compile queue (§3) and nothing else — no automatic status change follows from it, and its absence is never an error. |
 
 ### Sections (in this order, all required except `Context`)
 
@@ -47,7 +85,7 @@ sessions collision-free, so any random source is fine.
 
 ## 2. S — success pattern
 
-Path: `.ani/patterns/S-<slug>.md`
+Path: `<store>/patterns/S-<slug>.md`
 
 `<slug>` is lowercase kebab-case, descriptive of the situation
 (`S-dark-mode-tokens`, not `S-pattern-3`).
@@ -61,7 +99,7 @@ Path: `.ani/patterns/S-<slug>.md`
 | `compiled_from` | yes | list | F ids this pattern was compiled from, e.g. `[F-20260828-a1b2c3d4]`. Never empty — a pattern with no failure behind it is advice, not a pattern. |
 | `date_compiled` | yes | `YYYY-MM-DD` | From the `date` command. |
 | `keywords` | yes | list | 3–6 tokens, same vocabulary as the source F so INDEX matching stays coherent. |
-| `scope` | yes | enum | `project` (default) \| `global`. **`global` is manual promotion only** — an automatic path may never write `global`, and neither may a bulk approval. Approval (`/ani ok`) changes `status`, never `scope`: widening to `global` is a separate per-pattern decision the user states explicitly. |
+| `scope` | yes | enum | `project` \| `global`. **Mirrors the store the file lives in**: a pattern in the project overlay is `scope: project`, one in the global store is `scope: global`. Capture routing (§0) decides that at birth. **Moving an existing pattern between stores — in either direction — is a separate decision the user states explicitly.** Approval (`/ani ok`) and automatic promotion change `status` only; neither ever relocates a pattern or rewrites its `scope`, and neither does a bulk approval. |
 | `summary` | yes | one line | The INDEX row's summary, written in **use-when form**: "Use when …". This is what a future agent matches against; make it name the situation, not the fix. |
 
 Optional bookkeeping fields, added by the promotion flow when relevant:
@@ -98,7 +136,7 @@ from the current turn count.
 
 ## 3. INDEX.md
 
-Path: `.ani/INDEX.md`. A cache — safe to delete and regenerate at any time.
+Path: `<store>/INDEX.md`. A cache — safe to delete and regenerate at any time.
 
 ### Row format
 
@@ -120,11 +158,27 @@ Path: `.ani/INDEX.md`. A cache — safe to delete and regenerate at any time.
 | `summary` | S: frontmatter `summary` (use-when form). F: a one-line statement of the misreading. |
 | `updated` | Date of the last change to that pattern file |
 
+### Row order — the queue is the INDEX
+
+Rows are grouped S first, then F; the F block is the compile queue:
+
+1. S rows: `active`, then `provisional`. (`review-needed` and `retired` rows are
+   kept for the record but are never searched.)
+2. `captured` F rows **sorted by `recurrence` descending** — highest first. That
+   ordering *is* the unresolved-failure queue: no backlog file, no scheduler.
+   The head is what a session-start injection may surface, and what
+   `/ani resolve` is normally pointed at. Rows tied at `0` may sit in any order;
+   a class that never recurred is expected to stay `captured` forever.
+3. `compiled` / `archived` F rows last — they are the first to be dropped when
+   the budget bites.
+
 ### Budget
 
-**60 rows / 6KB.** The INDEX is designed to sit in context for a whole session,
-so this budget is a hard ceiling, not a suggestion. When it is exceeded, in
-order:
+**60 rows / 6KB per store**, and a session-start injection covering both stores
+shares **one combined 6KB**, project rows first — a second store must not double
+the standing context cost. The INDEX is designed to sit in context for a whole
+session, so this budget is a hard ceiling, not a suggestion. When it is exceeded,
+in order:
 
 1. Drop rows for `archived` F patterns and `retired` S patterns (the files stay;
    only the cache row goes).
@@ -138,18 +192,19 @@ order:
 If any row disagrees with its pattern file — status, scope, keywords, summary,
 date — **the pattern file wins**. Rewrite the row immediately; do not "fix" the
 pattern file to match the cache. If the INDEX is missing, unreadable, or clearly
-stale, rebuild it by scanning `.ani/patterns/*.md` frontmatter. Concurrent
+stale, rebuild it by scanning that store's `patterns/*.md` frontmatter. Concurrent
 sessions therefore self-heal without any locking.
 
 ---
 
 ## 4. config.md
 
-Path: `.ani/config.md`. Optional; every key has a default and any subset may be
-present. Keys live in a YAML frontmatter block; the body is free-form notes.
+Path: `<store>/config.md`. Optional; every key has a default and any subset may
+be present. Keys live in a YAML frontmatter block; the body is free-form notes.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
+| `global_store` | path | `~/.ani` | Where the global store lives. Read from the **first config.md consulted** (the project overlay's, since the global path is what is being resolved). `~` is expanded; nothing else is — no environment interpolation, no shell, no globbing. A harness-shaped location goes here, e.g. `~/.claude/ani`. |
 | `triggers_extra` | list of strings | `[]` | Project-specific correction phrases, added to the hints in `triggers.md`. Hints only — semantic recognition still rules. |
 | `language` | string (BCP-47-ish) | unset | Preferred language for pattern *values* (headings stay English). Unset = mirror the user's language. |
 | `index_budget` | `<rows>/<size>` | `60/6KB` | INDEX ceiling. Raise only with a reason; a bloated INDEX stops being free to keep in context. |
@@ -176,7 +231,7 @@ The incident: in a dark-mode task the user asked for the **background** color to
 change; the agent changed the **text** color, and did it inside a component
 instead of the theme tokens.
 
-### 5.1 `.ani/patterns/F-20260828-a1b2c3d4.md`
+### 5.1 `<project>/.ani/patterns/F-20260828-a1b2c3d4.md`
 
 ```markdown
 ---
@@ -220,7 +275,7 @@ Repo themes everything through CSS custom properties in `src/styles/tokens.css`.
 Component files are expected to consume tokens, never to hardcode colors.
 ```
 
-### 5.2 `.ani/patterns/S-dark-mode-tokens.md`
+### 5.2 `<project>/.ani/patterns/S-dark-mode-tokens.md`
 
 ```markdown
 ---

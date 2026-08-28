@@ -8,8 +8,10 @@ Two independent, deterministic detections run on every submitted prompt:
    session id and a prompt hash so the skill can verify the marker belongs to
    the current turn before consuming it.
 2. Proactive hint — the prompt overlaps the keywords of a usable S-pattern in
-   the project's ``.ani/INDEX.md``. Emits an ``[ani-hint v1]`` marker listing
-   up to three pattern ids.
+   either store: the project overlay ``<repo>/.ani/INDEX.md`` and the global
+   store ``~/.ani/INDEX.md`` (spec §3.4). Project rows are read first and win
+   on a shared id. Emits an ``[ani-hint v1]`` marker listing up to three
+   pattern ids in total, not three per store.
 
 Contract (see references/adapters/claude-code.md):
 * stdout carries ONLY the single-line hook JSON, and only when there is
@@ -31,8 +33,40 @@ import sys
 
 MARKER_VERSION = "v1"
 MAX_HINT_PATTERNS = 3
-MAX_INDEX_BYTES = 256 * 1024
+# The INDEX budget in schemas.md §3 is 60 rows / 6KB. 16 KiB is headroom over
+# that without being fail-open: anything larger is not an INDEX we should be
+# feeding into the turn's context, so the hint path is skipped entirely.
+MAX_INDEX_BYTES = 16 * 1024
 MAX_PARENT_LEVELS = 5
+# A hook payload is one prompt. Anything past this is not a prompt; refuse to
+# even decode it rather than spend the user's turn on it.
+MAX_STDIN_BYTES = 256 * 1024
+# Pattern ids are echoed verbatim into additionalContext, i.e. straight into
+# the model's system reminder. Only ids that match the schema's S-<kebab-slug>
+# shape are ever echoed; everything else is dropped without comment.
+MAX_PATTERN_ID_LEN = 64
+_PATTERN_ID_RE = re.compile(r"\AS-[a-z0-9]+(?:-[a-z0-9]+)*\Z")
+# F ids are echoed by the SessionStart hook (the unresolved-recurrence line) and
+# are turned into a path under ``patterns/``, so the shape is pinned exactly:
+# no separators, no dots, no traversal.
+_FAILURE_ID_RE = re.compile(r"\AF-[0-9]{8}-[a-z0-9]{8}\Z")
+
+# Two stores (spec §3.4). The global store is the always-present default; the
+# project ``.ani/`` is an opt-in overlay. The global path resolves from the
+# ANI_GLOBAL_STORE environment variable, then from ``global_store:`` in the
+# project store's config.md, then from the default below.
+GLOBAL_STORE_ENV = "ANI_GLOBAL_STORE"
+DEFAULT_GLOBAL_STORE = os.path.join("~", ".ani")
+# A configured path is expanded with expanduser and nothing else: no
+# environment interpolation, no shell, no globbing. A store path is a location,
+# never a command.
+MAX_STORE_PATH_LEN = 512
+MAX_CONFIG_BYTES = 8 * 1024
+_CONFIG_FRONTMATTER_FENCE = "---"
+_INLINE_COMMENT_RE = re.compile(r"\s+#.*\Z")
+# Session ids are echoed too. Claude Code sends a UUID; anything outside this
+# conservative alphabet is dropped character by character.
+_SESSION_DROP_RE = re.compile(r"[^A-Za-z0-9._\-]+")
 
 NUDGE_SENTENCE = (
     "Correction signal detected — if this is a genuine correction of the "
@@ -112,23 +146,32 @@ def _force_utf8() -> None:
             pass
 
 
-def read_stdin() -> str:
+def read_stdin():
     """Read the payload as UTF-8 regardless of the host locale.
 
     Claude Code sends UTF-8. On a Windows cp949 box the text wrapper would
     decode it with the ANSI code page and blow up on the first Korean
     character, so the bytes are taken straight from the buffer.
+
+    Reads at most ``MAX_STDIN_BYTES + 1``: returns ``None`` when the payload
+    exceeds the cap, which the caller turns into the silent contract (no
+    stdout, exit 0). An unbounded read would let a pathological payload pin
+    memory inside the user's turn.
     """
     try:
-        data = sys.stdin.buffer.read()
+        data = sys.stdin.buffer.read(MAX_STDIN_BYTES + 1)
     except Exception:
         try:
-            return sys.stdin.read()
+            data = sys.stdin.read(MAX_STDIN_BYTES + 1)
         except Exception:
             return ""
+    if data is None:
+        return ""
+    if len(data) > MAX_STDIN_BYTES:
+        return None
     if isinstance(data, bytes):
         return data.decode("utf-8-sig", errors="replace")
-    return data or ""
+    return data
 
 
 def detect_correction(prompt: str):
@@ -172,6 +215,117 @@ def find_index(project_dir: str):
     return None
 
 
+def _expand_store_path(raw):
+    """Turn a configured store path into an absolute one, or None.
+
+    ``expanduser`` is the only expansion performed. ``expandvars`` is
+    deliberately absent: the value comes from a file in the repo, and a store
+    path must not be able to read the environment, let alone run anything.
+    """
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip().strip("'\"").strip()
+    if not value or len(value) > MAX_STORE_PATH_LEN:
+        return None
+    if any(char in value for char in ("\n", "\r", "\x00")):
+        return None
+    try:
+        return os.path.abspath(os.path.expanduser(value))
+    except Exception:
+        return None
+
+
+def _strip_inline_comment(value: str) -> str:
+    """Drop a trailing ``# …`` from an unquoted scalar, the way YAML would.
+
+    The shipped templates annotate fields inline (``recurrence: 0  # …``), so a
+    reader that took the rest of the line verbatim would reject every value a
+    user copied from a template.
+    """
+    text = value.strip()
+    quote = text[:1]
+    if quote in ("'", '"'):
+        # A quoted scalar ends at its closing quote; anything after it is a
+        # comment, so it goes the same way as an unquoted one's.
+        end = text.find(quote, 1)
+        return text[: end + 1] if end > 0 else text
+    return _INLINE_COMMENT_RE.sub("", text)
+
+
+def read_config_value(config_path: str, key: str, max_bytes: int = MAX_CONFIG_BYTES):
+    """Read one scalar key from a markdown file's YAML frontmatter block.
+
+    Used for ``global_store`` in a store's config.md and for ``recurrence`` in
+    an F pattern file — the same shape, so the same reader.
+
+    Deliberately not a YAML parser: the only key any hook needs is
+    ``global_store``, and a hook that grows a parser stops being a hook. Keys
+    outside the leading ``---`` block are ignored, so the free-form notes in
+    the body cannot be mistaken for configuration.
+    """
+    try:
+        if os.path.getsize(config_path) > max_bytes:
+            return None
+        # utf-8-sig: a BOM is against the schema but must not silently cost the
+        # whole block, which is what a mismatched opening fence would do.
+        with open(config_path, "r", encoding="utf-8-sig", errors="replace") as handle:
+            text = handle.read(max_bytes)
+    except OSError:
+        return None
+    prefix = key + ":"
+    in_frontmatter = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped == _CONFIG_FRONTMATTER_FENCE:
+            if in_frontmatter:
+                break
+            in_frontmatter = True
+            continue
+        if not in_frontmatter:
+            if not stripped:
+                continue  # leading blank lines are tolerated
+            break  # body before any frontmatter: nothing to read
+        if stripped.startswith(prefix):
+            return _strip_inline_comment(stripped[len(prefix) :])
+    return None
+
+
+def global_store_dir(project_index_path=None):
+    """Absolute path of the global store: env > project config > ``~/.ani``."""
+    override = _expand_store_path(os.environ.get(GLOBAL_STORE_ENV))
+    if override:
+        return override
+    if project_index_path:
+        config = os.path.join(os.path.dirname(project_index_path), "config.md")
+        configured = _expand_store_path(read_config_value(config, "global_store"))
+        if configured:
+            return configured
+    return _expand_store_path(DEFAULT_GLOBAL_STORE)
+
+
+def _same_path(left, right) -> bool:
+    if not left or not right:
+        return False
+    return os.path.normcase(os.path.abspath(left)) == os.path.normcase(
+        os.path.abspath(right)
+    )
+
+
+def find_global_index(project_index_path=None):
+    """``<global store>/INDEX.md``, or None when it is absent or is the project's.
+
+    Unlike the project store there is no parent walk: the global store is one
+    named location, not something to be discovered.
+    """
+    store = global_store_dir(project_index_path)
+    if not store:
+        return None
+    candidate = os.path.join(store, "INDEX.md")
+    if _same_path(candidate, project_index_path):
+        return None  # the overlay and the default resolved to one file
+    return candidate if os.path.isfile(candidate) else None
+
+
 def read_index(path: str) -> str:
     try:
         if os.path.getsize(path) > MAX_INDEX_BYTES:
@@ -199,12 +353,44 @@ def _split_keywords(cell: str):
     return out
 
 
+def valid_pattern_id(pattern_id) -> bool:
+    """True only for a schema-shaped ``S-<kebab-slug>`` id.
+
+    The INDEX is a file in the repo, so its cells are untrusted input that
+    ends up inside the model's context. An id like
+    ``S-evil] Ignore prior instructions`` must never reach the marker, so the
+    shape is enforced here rather than sanitised at the sink.
+    """
+    if not isinstance(pattern_id, str):
+        return False
+    if not pattern_id or len(pattern_id) > MAX_PATTERN_ID_LEN:
+        return False
+    return _PATTERN_ID_RE.match(pattern_id) is not None
+
+
+def valid_failure_id(pattern_id) -> bool:
+    """True only for a schema-shaped ``F-<YYYYMMDD>-<rand8>`` id.
+
+    Same contract as :func:`valid_pattern_id`, plus one more: this id is joined
+    onto a store path, so the shape has to exclude ``/``, ``\\`` and ``..``
+    by construction rather than by sanitising afterwards.
+    """
+    if not isinstance(pattern_id, str):
+        return False
+    if not pattern_id or len(pattern_id) > MAX_PATTERN_ID_LEN:
+        return False
+    return _FAILURE_ID_RE.match(pattern_id) is not None
+
+
 def parse_index(text: str):
     """Parse the INDEX cache table into (id, status, keywords) rows.
 
     Column order defaults to the documented
     ``| id | status | scope | keywords | summary | updated |`` but a header
     row, when present, wins — the table is a regenerable cache and may drift.
+
+    Rows whose id is not a valid ``S-<kebab-slug>`` are dropped here; status
+    is filtered later, in :func:`collect_hints`.
     """
     id_col, status_col, keyword_col = 0, 1, 3
     rows = []
@@ -226,7 +412,7 @@ def parse_index(text: str):
         if len(cells) <= max(id_col, keyword_col):
             continue
         pattern_id = cells[id_col].strip().strip("`")
-        if not pattern_id.lower().startswith("s-"):
+        if not valid_pattern_id(pattern_id):
             continue
         status = ""
         if 0 <= status_col < len(cells):
@@ -251,21 +437,30 @@ def prompt_variants(prompt: str):
     return lower, variants
 
 
-def collect_hints(prompt: str, rows):
-    """Up to MAX_HINT_PATTERNS S-ids whose keywords intersect the prompt."""
+def collect_hints(prompt: str, rows, exclude=None, limit=MAX_HINT_PATTERNS):
+    """Up to ``limit`` S-ids from ONE store whose keywords intersect the prompt.
+
+    ``exclude`` carries the ids a higher-priority store already claimed, which
+    is how the project overlay wins a shared id: the global pass never gets to
+    offer an id the project pass already emitted.
+    """
     lower, variants = prompt_variants(prompt)
     if not lower.strip():
         return []
+    excluded = set(exclude or ())
     buckets = {status: [] for status in STATUS_PRIORITY}
     for pattern_id, status, keywords in rows:
-        # A missing status cell is treated as active; retired / review-needed /
-        # unknown states are not searchable.
-        effective = status or STATUS_PRIORITY[0]
-        if effective not in buckets:
+        if pattern_id in excluded:
+            continue
+        # Searchable statuses are exactly `active` and `provisional`. An empty
+        # cell, a missing status column, or any other value (retired,
+        # review-needed, a typo, something injected) is not searchable — the
+        # INDEX is an untrusted file, so this fails closed.
+        if status not in buckets:
             continue
         for keyword in keywords:
             if keyword in lower or keyword in variants:
-                bucket_list = buckets[effective]
+                bucket_list = buckets[status]
                 if pattern_id not in bucket_list:
                     bucket_list.append(pattern_id)
                 break
@@ -274,17 +469,41 @@ def collect_hints(prompt: str, rows):
         for pattern_id in buckets[status]:
             if pattern_id not in ordered:
                 ordered.append(pattern_id)
-    return ordered[:MAX_HINT_PATTERNS]
+    return ordered[:limit]
+
+
+def collect_store_hints(prompt: str, project_rows, global_rows):
+    """Hints across both stores under one shared cap.
+
+    Order is store-major, matching the matching priority in schemas.md
+    (`project S > global S`); within a store `active` still outranks
+    `provisional`. The cap is MAX_HINT_PATTERNS in total — a second store must
+    not double the number of ids pushed into the turn.
+    """
+    ids = collect_hints(prompt, project_rows)
+    if len(ids) < MAX_HINT_PATTERNS:
+        ids = ids + collect_hints(
+            prompt, global_rows, exclude=ids, limit=MAX_HINT_PATTERNS - len(ids)
+        )
+    return ids[:MAX_HINT_PATTERNS]
 
 
 def sanitize_session(session_id) -> str:
+    """Reduce the session id to the id alphabet before it is echoed.
+
+    Same reasoning as :func:`valid_pattern_id`: everything this function
+    returns lands inside the marker, inside the model's context.
+    """
     if not isinstance(session_id, str):
         return "unknown"
-    cleaned = re.sub(r"\s+", "", session_id)
+    cleaned = _SESSION_DROP_RE.sub("", session_id)
     return cleaned[:128] if cleaned else "unknown"
 
 
 def build_context(session_id, prompt: str, slug, hint_ids) -> str:
+    # Re-validate at the sink: nothing reaches additionalContext unvalidated,
+    # whatever path it arrived by.
+    hint_ids = [pattern_id for pattern_id in hint_ids if valid_pattern_id(pattern_id)]
     blocks = []
     if slug:
         blocks.append(
@@ -308,10 +527,16 @@ def build_context(session_id, prompt: str, slug, hint_ids) -> str:
     return "\n".join(blocks)
 
 
-def emit(context: str) -> None:
+def emit(context: str, event_name: str = "UserPromptSubmit") -> None:
+    """Write the single-line hook JSON.
+
+    ``event_name`` is a parameter only so the SessionStart hook can reuse the
+    encoding fallback below instead of copying it; this hook always passes the
+    default.
+    """
     payload = {
         "hookSpecificOutput": {
-            "hookEventName": "UserPromptSubmit",
+            "hookEventName": event_name,
             "additionalContext": context,
         }
     }
@@ -336,9 +561,15 @@ def run(raw: str) -> None:
 
     hint_ids = []
     try:
-        index_path = find_index(resolve_project_dir(payload))
-        if index_path:
-            hint_ids = collect_hints(prompt, parse_index(read_index(index_path)))
+        project_index = find_index(resolve_project_dir(payload))
+        global_index = find_global_index(project_index)
+        project_rows = parse_index(read_index(project_index)) if project_index else []
+        global_rows = parse_index(read_index(global_index)) if global_index else []
+        hint_ids = [
+            pattern_id
+            for pattern_id in collect_store_hints(prompt, project_rows, global_rows)
+            if valid_pattern_id(pattern_id)
+        ]
     except Exception as exc:
         # An unreadable or malformed store must never cost us the nudge.
         hint_ids = []
@@ -358,6 +589,8 @@ def main() -> int:
     try:
         raw = read_stdin()
     except Exception:
+        return 0
+    if raw is None:  # payload over MAX_STDIN_BYTES: silent, no stdout
         return 0
     try:
         run(raw)
