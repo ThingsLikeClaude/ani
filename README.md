@@ -1,5 +1,7 @@
 # ani — Agent Negative Index
 
+English · **[한국어](README.ko.md)**
+
 **the no-that's-not-it protocol · a resolution loop for negative feedback**
 
 `ani` carries a double meaning:
