@@ -58,7 +58,7 @@ ani는 여기에 세 가지로 대응한다.
 ### 1. Claude Code 플러그인 (권장)
 
 ```
-/plugin marketplace add <owner>/ani
+/plugin marketplace add ThingsLikeClaude/ani
 /plugin install ani
 ```
 

@@ -84,4 +84,4 @@ Initial release.
 - **Documentation** — README, [design rationale](docs/design.md), and
   [contribution guide](CONTRIBUTING.md).
 
-[0.1.0]: https://github.com/OWNER/ani/releases/tag/v0.1.0
+[0.1.0]: https://github.com/ThingsLikeClaude/ani/releases/tag/v0.1.0

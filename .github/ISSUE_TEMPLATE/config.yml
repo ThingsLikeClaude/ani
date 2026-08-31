@@ -1,8 +1,8 @@
 blank_issues_enabled: true
 contact_links:
   - name: Contributing guide
-    url: https://github.com/OWNER/ani/blob/main/CONTRIBUTING.md
+    url: https://github.com/ThingsLikeClaude/ani/blob/main/CONTRIBUTING.md
     about: How to add an adapter, the acceptance test, and the code rules.
   - name: Design rationale
-    url: https://github.com/OWNER/ani/blob/main/docs/design.md
+    url: https://github.com/ThingsLikeClaude/ani/blob/main/docs/design.md
     about: Why the trust ladder, the evidence score, and the file conventions work the way they do.

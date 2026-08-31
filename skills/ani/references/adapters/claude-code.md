@@ -280,7 +280,7 @@ file, and always cite the id — noting explicitly when a pattern is provisional
 The plugin bundles the skill (Tier 0) and both hooks (Tier 1) together.
 
 ```
-/plugin marketplace add <owner>/ani
+/plugin marketplace add ThingsLikeClaude/ani
 /plugin install ani
 ```
 

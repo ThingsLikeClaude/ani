@@ -59,7 +59,7 @@ Three verified paths:
 ### 1. Claude Code plugin (primary)
 
 ```
-/plugin marketplace add <owner>/ani
+/plugin marketplace add ThingsLikeClaude/ani
 /plugin install ani
 ```
 
