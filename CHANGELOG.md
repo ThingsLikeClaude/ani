@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Bootstrap digest format spec** (`adapters/bootstrap.md` step 6): the approval request is
+  now a specified decision document — approval table first, markdown tables only,
+  self-contained rows, methodology demoted to one line + digest pointer, decision tracks
+  numbered. Learned from the first real sweep, whose report buried the decision mid-page.
+- **Known limits** document the three miner defects observed in that sweep, tracked as
+  issues #1 (alphabetical file cap), #2 (resumed sessions forge the repetition bonus) and
+  #3 (self-mining of injected skill text), with agent-side mitigations until they are fixed.
+
 ## [0.1.1] - 2026-08-31
 
 Documentation release — nothing in the protocol or the code changed.
