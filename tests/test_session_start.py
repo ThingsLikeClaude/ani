@@ -740,5 +740,192 @@ class WrapperTests(SessionStartTestCase):
                 self.assertNotIn(b"\r\n", fh.read(), path)
 
 
+class NoInterpreterWrapperTests(unittest.TestCase):
+    """run-hook.cmd when no python3/python/py is on PATH.
+
+    Degrading to Tier 0 is a supported configuration, not an error, so the
+    wrapper says so exactly once — at session start, in the one place the user
+    reads — and stays silent on every other invocation, because a notice on
+    every prompt is spam rather than a diagnostic. Both halves of the polyglot
+    carry that line, so both are exercised here: cmd.exe on Windows, and bash
+    wherever a PATH with coreutils but no interpreter can be assembled.
+    """
+
+    FALLBACK_PREFIX = "[ani] hooks installed"
+    INTERPRETERS = ("python3", "python", "py")
+
+    @classmethod
+    def setUpClass(cls):
+        cls.bash = shutil.which("bash")
+        cls.bare_path = cls._find_bare_bash_path()
+
+    @classmethod
+    def _find_bare_bash_path(cls):
+        """A PATH value for this bash with coreutils on it but no interpreter.
+
+        The wrapper calls ``dirname`` before it ever looks for python, so an
+        empty PATH would prove nothing: it would exit early for the wrong
+        reason. None means the environment cannot supply such a PATH and the
+        bash half is skipped rather than faked.
+        """
+        if not cls.bash:
+            return None
+        try:
+            probe = subprocess.run(
+                [cls.bash, "-c", "command -v dirname"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        except OSError:
+            return None
+        if probe.returncode != 0:
+            return None
+        located = probe.stdout.decode("utf-8", "replace").strip().splitlines()
+        if not located or "/" not in located[0]:
+            return None
+        candidate = located[0].rsplit("/", 1)[0] or "/"
+        check = (
+            'PATH="$1"; export PATH\n'
+            "command -v dirname >/dev/null 2>&1 || exit 3\n"
+            'for ani_p in %s; do command -v "$ani_p" >/dev/null 2>&1 && exit 4; done\n'
+            "exit 0\n" % " ".join(cls.INTERPRETERS)
+        )
+        verdict = subprocess.run(
+            [cls.bash, "-c", check, "ani-run-hook-test", candidate],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        return candidate if verdict.returncode == 0 else None
+
+    def setUp(self):
+        self.work = tempfile.mkdtemp(prefix="ani-nopy-")
+        self.addCleanup(shutil.rmtree, self.work, True)
+
+    def assert_fallback_line(self, stdout):
+        """The notice must be one parseable JSON line, byte for byte."""
+        stripped = stdout.strip()
+        self.assertTrue(stripped, "expected the fallback line, got nothing")
+        self.assertNotIn("\n", stripped, "the fallback must be a single line")
+        payload = json.loads(stripped)
+        self.assertEqual(list(payload.keys()), ["hookSpecificOutput"])
+        block = payload["hookSpecificOutput"]
+        self.assertEqual(set(block), {"hookEventName", "additionalContext"})
+        self.assertEqual(block["hookEventName"], "SessionStart")
+        context = block["additionalContext"]
+        self.assertTrue(context.startswith(self.FALLBACK_PREFIX), repr(context))
+        self.assertIn("running in manual mode", context)
+        self.assertIn("/ani doctor", context)
+        return context
+
+    # --- cmd.exe half ------------------------------------------------------
+
+    def run_cmd(self, argv):
+        system_root = os.environ.get("SystemRoot") or r"C:\Windows"
+        system32 = os.path.join(system_root, "System32")
+        comspec = os.path.join(system32, "cmd.exe")
+        where = os.path.join(system32, "where.exe")
+        if not os.path.isfile(comspec) or not os.path.isfile(where):
+            self.skipTest("cmd.exe/where.exe not found under " + system32)
+        env = {
+            "PATH": system32,
+            "SystemRoot": system_root,
+            "ComSpec": comspec,
+            "PATHEXT": ".COM;.EXE;.BAT;.CMD",
+        }
+        # `where` searches the working directory first, so the premise has to
+        # be checked from the same directory the wrapper will run in.
+        for name in ("python", "py"):
+            probe = subprocess.run(
+                [where, name],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=self.work,
+                env=env,
+            )
+            if probe.returncode == 0:
+                self.skipTest("%s is reachable from a bare System32 PATH" % name)
+        proc = subprocess.run(
+            [comspec, "/c", WRAPPER, argv],
+            input=b"{}",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=self.work,
+            env=env,
+        )
+        return (
+            proc.returncode,
+            proc.stdout.decode("utf-8", "replace"),
+            proc.stderr.decode("utf-8", "replace"),
+        )
+
+    @unittest.skipUnless(os.name == "nt", "the cmd.exe half only runs on Windows")
+    def test_cmd_session_start_emits_exactly_one_json_line(self):
+        code, out, err = self.run_cmd("session-start")
+        self.assertEqual(code, 0, err)
+        self.assert_fallback_line(out)
+
+    @unittest.skipUnless(os.name == "nt", "the cmd.exe half only runs on Windows")
+    def test_cmd_other_arguments_stay_silent(self):
+        for argv in ("trigger", "bogus"):
+            code, out, err = self.run_cmd(argv)
+            self.assertEqual(code, 0, "argv=%r: %s" % (argv, err))
+            self.assertEqual(out.strip(), "", "argv=%r" % argv)
+
+    # --- bash half ---------------------------------------------------------
+
+    def run_bash(self, argv):
+        if not self.bash:
+            self.skipTest("bash not available on this machine")
+        if not self.bare_path:
+            self.skipTest("no bash PATH with coreutils but no interpreter here")
+        # PATH is set inside bash rather than in the parent environment: an
+        # MSYS bash rewrites an inherited Windows PATH, and this one has to
+        # arrive verbatim.
+        script = 'PATH="$1"; export PATH; exec "$2" "$3" "$4"'
+        proc = subprocess.run(
+            [
+                self.bash,
+                "-c",
+                script,
+                "ani-run-hook-test",
+                self.bare_path,
+                self.bash.replace("\\", "/"),
+                WRAPPER.replace("\\", "/"),
+                argv,
+            ],
+            input=b"{}",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=self.work,
+        )
+        return (
+            proc.returncode,
+            proc.stdout.decode("utf-8", "replace"),
+            proc.stderr.decode("utf-8", "replace"),
+        )
+
+    def test_bash_session_start_emits_exactly_one_json_line(self):
+        code, out, err = self.run_bash("session-start")
+        self.assertEqual(code, 0, err)
+        self.assert_fallback_line(out)
+
+    def test_bash_other_arguments_stay_silent(self):
+        for argv in ("trigger", "bogus"):
+            code, out, err = self.run_bash(argv)
+            self.assertEqual(code, 0, "argv=%r: %s" % (argv, err))
+            self.assertEqual(out.strip(), "", "argv=%r" % argv)
+
+    def test_both_halves_carry_the_same_notice(self):
+        # One string, two encodings of it. A drift between the batch `echo`
+        # and the POSIX `printf` would give half the users a different notice.
+        with open(WRAPPER, "r", encoding="utf-8") as handle:
+            source = handle.read()
+        contexts = re.findall(r'"additionalContext":"([^"]+)"', source)
+        self.assertEqual(len(contexts), 2, contexts)
+        self.assertEqual(contexts[0], contexts[1])
+        self.assertTrue(contexts[0].startswith(self.FALLBACK_PREFIX), contexts[0])
+        contexts[0].encode("ascii")  # the notice must survive a cp949 console
+
+
 if __name__ == "__main__":
     unittest.main()

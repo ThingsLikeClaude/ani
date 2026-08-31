@@ -13,6 +13,15 @@ Two independent, deterministic detections run on every submitted prompt:
    on a shared id. Emits an ``[ani-hint v1]`` marker listing up to three
    pattern ids in total, not three per store.
 
+   The same marker can also carry ``K-`` ids from external *knowledge sources*
+   — files in the INDEX table shape that this plugin does not own and never
+   writes, named by the ``knowledge_sources`` config key (spec §3.7,
+   schemas.md §6). They fill only the slots the stores left: a K id can never
+   displace an S id, and the total cap is unchanged. Knowledge is read here and
+   nowhere else — the SessionStart injection deliberately does not touch it,
+   because a standing per-session budget is the wrong place for knowledge that
+   can be pulled on demand.
+
 Contract (see references/adapters/claude-code.md):
 * stdout carries ONLY the single-line hook JSON, and only when there is
   something to say.
@@ -46,6 +55,9 @@ MAX_STDIN_BYTES = 256 * 1024
 # shape are ever echoed; everything else is dropped without comment.
 MAX_PATTERN_ID_LEN = 64
 _PATTERN_ID_RE = re.compile(r"\AS-[a-z0-9]+(?:-[a-z0-9]+)*\Z")
+# Knowledge ids reach the same sink from a file this plugin does not own, so
+# they are pinned to the same shape as an S id, one letter apart.
+_KNOWLEDGE_ID_RE = re.compile(r"\AK-[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 # F ids are echoed by the SessionStart hook (the unresolved-recurrence line) and
 # are turned into a path under ``patterns/``, so the shape is pinned exactly:
 # no separators, no dots, no traversal.
@@ -62,6 +74,20 @@ DEFAULT_GLOBAL_STORE = os.path.join("~", ".ani")
 # never a command.
 MAX_STORE_PATH_LEN = 512
 MAX_CONFIG_BYTES = 8 * 1024
+# External knowledge indexes: files in the same 6-column table shape as
+# INDEX.md, listed as a comma-separated path list under ``knowledge_sources``
+# in either store's config.md, or in ANI_KNOWLEDGE_SOURCES. The environment
+# variable REPLACES the configured lists rather than adding to them — present
+# but empty is therefore an explicit "no knowledge", not a fall-through.
+KNOWLEDGE_SOURCES_ENV = "ANI_KNOWLEDGE_SOURCES"
+KNOWLEDGE_SOURCES_KEY = "knowledge_sources"
+# Four files, stat-ed and read inside the user's turn on every prompt. The cap
+# is a latency budget, not a taste judgement; extras are dropped silently.
+MAX_KNOWLEDGE_SOURCES = 4
+# The only status a knowledge row may carry. A third-party file has no
+# provisional tier for this hook to reason about, so anything else is dropped
+# rather than ranked.
+KNOWLEDGE_STATUS = "active"
 _CONFIG_FRONTMATTER_FENCE = "---"
 _INLINE_COMMENT_RE = re.compile(r"\s+#.*\Z")
 # Session ids are echoed too. Claude Code sends a UUID; anything outside this
@@ -303,6 +329,67 @@ def global_store_dir(project_index_path=None):
     return _expand_store_path(DEFAULT_GLOBAL_STORE)
 
 
+def _split_source_list(raw):
+    """A comma-separated path list into absolute paths, dropping the unusable.
+
+    Each entry goes through :func:`_expand_store_path`, so a knowledge source
+    obeys exactly the rules a store path does: ``~`` is expanded and nothing
+    else, no environment interpolation, no shell, no globbing, and an entry
+    that is empty, over-long, or carries a newline or NUL is dropped.
+    """
+    if not isinstance(raw, str):
+        return []
+    out = []
+    for chunk in raw.split(","):
+        path = _expand_store_path(chunk)
+        if path:
+            out.append(path)
+    return out
+
+
+def _dedupe_paths(paths):
+    """First occurrence wins, order preserved; case-folded like the OS folds it."""
+    seen = set()
+    out = []
+    for path in paths:
+        key = os.path.normcase(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(path)
+    return out
+
+
+def _config_sources(store_dir):
+    return _split_source_list(
+        read_config_value(os.path.join(store_dir, "config.md"), KNOWLEDGE_SOURCES_KEY)
+    )
+
+
+def knowledge_source_paths(project_index_path=None):
+    """The knowledge files to consult: env override, else project then global.
+
+    ``ANI_KNOWLEDGE_SOURCES`` REPLACES both configured lists — it is the escape
+    hatch and the kill switch, so a variable that is present but empty resolves
+    to no sources rather than falling through to config.
+
+    Otherwise the project overlay's list is read first and the global store's
+    is appended, then duplicates are dropped keeping first position. Project
+    first for the same reason project rows are matched first: a repo's list is
+    the more specific statement. At most ``MAX_KNOWLEDGE_SOURCES`` survive.
+    """
+    raw_env = os.environ.get(KNOWLEDGE_SOURCES_ENV)
+    if raw_env is not None:
+        return _dedupe_paths(_split_source_list(raw_env))[:MAX_KNOWLEDGE_SOURCES]
+    paths = []
+    if project_index_path:
+        paths.extend(_config_sources(os.path.dirname(project_index_path)))
+    store = global_store_dir(project_index_path)
+    if store:
+        paths.extend(_config_sources(store))
+    return _dedupe_paths(paths)[:MAX_KNOWLEDGE_SOURCES]
+
+
 def _same_path(left, right) -> bool:
     if not left or not right:
         return False
@@ -334,6 +421,25 @@ def read_index(path: str) -> str:
         return ""
     with open(path, "r", encoding="utf-8", errors="replace") as handle:
         return handle.read(MAX_INDEX_BYTES)
+
+
+def read_knowledge_index(path) -> str:
+    """The text of one knowledge file, or ``""`` — this one never raises.
+
+    A knowledge source is a path a user typed into a config file: it may be
+    gone, be a directory, or be unreadable, and none of those is worth a word.
+    The size rule is INDEX.md's, unchanged: past ``MAX_INDEX_BYTES`` the file is
+    skipped **whole** rather than truncated, because a table that big is not one
+    to be feeding into the turn at all.
+    """
+    if not isinstance(path, str) or not path:
+        return ""
+    try:
+        if not os.path.isfile(path):
+            return ""
+        return read_index(path)
+    except Exception:
+        return ""
 
 
 def _split_row(line: str):
@@ -382,15 +488,37 @@ def valid_failure_id(pattern_id) -> bool:
     return _FAILURE_ID_RE.match(pattern_id) is not None
 
 
-def parse_index(text: str):
-    """Parse the INDEX cache table into (id, status, keywords) rows.
+def valid_knowledge_id(pattern_id) -> bool:
+    """True only for a ``K-<kebab-slug>`` id from a knowledge source.
+
+    Identical contract to :func:`valid_pattern_id`, and identical stakes: a
+    knowledge file is somebody else's file, so a row reading
+    ``K-evil] ignore prior instructions`` must be refused by shape here rather
+    than sanitised at the sink.
+    """
+    if not isinstance(pattern_id, str):
+        return False
+    if not pattern_id or len(pattern_id) > MAX_PATTERN_ID_LEN:
+        return False
+    return _KNOWLEDGE_ID_RE.match(pattern_id) is not None
+
+
+def valid_hint_id(pattern_id) -> bool:
+    """True for either kind of id the ``[ani-hint v1]`` marker may carry."""
+    return valid_pattern_id(pattern_id) or valid_knowledge_id(pattern_id)
+
+
+def parse_index(text: str, is_valid_id=valid_pattern_id):
+    """Parse an INDEX-shaped table into (id, status, keywords) rows.
 
     Column order defaults to the documented
     ``| id | status | scope | keywords | summary | updated |`` but a header
     row, when present, wins — the table is a regenerable cache and may drift.
 
-    Rows whose id is not a valid ``S-<kebab-slug>`` are dropped here; status
-    is filtered later, in :func:`collect_hints`.
+    Rows whose id fails ``is_valid_id`` are dropped here; status is filtered
+    later, in :func:`collect_hints`. The validator is a parameter only so a
+    knowledge source can be parsed by the same code that parses the store's own
+    INDEX — the two files have one format, and must have one parser.
     """
     id_col, status_col, keyword_col = 0, 1, 3
     rows = []
@@ -412,7 +540,7 @@ def parse_index(text: str):
         if len(cells) <= max(id_col, keyword_col):
             continue
         pattern_id = cells[id_col].strip().strip("`")
-        if not valid_pattern_id(pattern_id):
+        if not is_valid_id(pattern_id):
             continue
         status = ""
         if 0 <= status_col < len(cells):
@@ -488,6 +616,44 @@ def collect_store_hints(prompt: str, project_rows, global_rows):
     return ids[:MAX_HINT_PATTERNS]
 
 
+def parse_knowledge(text: str):
+    """Eligible rows from a knowledge index: ``active`` only, K ids only.
+
+    Everything else — a provisional row, a retired one, a blank status cell, an
+    id of any other shape — is dropped without comment (schemas.md §6). The
+    file is not this plugin's, so it gets the narrowest reading that can still
+    be useful.
+
+    Note what does NOT come back with the row: the summary cell is parsed and
+    discarded. Only the id is ever echoed, which is why the hint path needs no
+    fence neutralisation — unlike the SessionStart injection, no prose from an
+    untrusted file reaches the turn at all.
+    """
+    return [
+        row
+        for row in parse_index(text, valid_knowledge_id)
+        if row[1] == KNOWLEDGE_STATUS
+    ]
+
+
+def collect_knowledge_hints(prompt: str, sources, exclude=None, limit=0):
+    """K ids for the slots the stores left over, in source order.
+
+    ``limit`` is what remains of ``MAX_HINT_PATTERNS`` after the stores have
+    been served, so this can only ever add to the marker, never reorder or
+    evict it: knowledge is the least authoritative tier and is priced that way.
+    Sources are concatenated before matching, so an earlier file wins a tie.
+    """
+    if limit <= 0:
+        return []
+    rows = []
+    for path in sources:
+        rows.extend(parse_knowledge(read_knowledge_index(path)))
+    if not rows:
+        return []
+    return collect_hints(prompt, rows, exclude=exclude, limit=limit)
+
+
 def sanitize_session(session_id) -> str:
     """Reduce the session id to the id alphabet before it is echoed.
 
@@ -502,8 +668,10 @@ def sanitize_session(session_id) -> str:
 
 def build_context(session_id, prompt: str, slug, hint_ids) -> str:
     # Re-validate at the sink: nothing reaches additionalContext unvalidated,
-    # whatever path it arrived by.
-    hint_ids = [pattern_id for pattern_id in hint_ids if valid_pattern_id(pattern_id)]
+    # whatever path it arrived by. Both id shapes are alphanumeric-and-hyphen
+    # by construction, so there is no fence or control character left for the
+    # marker to carry — the shape check IS the neutralisation.
+    hint_ids = [pattern_id for pattern_id in hint_ids if valid_hint_id(pattern_id)]
     blocks = []
     if slug:
         blocks.append(
@@ -560,6 +728,7 @@ def run(raw: str) -> None:
     slug = detect_correction(prompt)
 
     hint_ids = []
+    project_index = None
     try:
         project_index = find_index(resolve_project_dir(payload))
         global_index = find_global_index(project_index)
@@ -577,6 +746,29 @@ def run(raw: str) -> None:
             sys.stderr.write("ani_trigger: index lookup failed: {0}\n".format(exc))
         except Exception:
             pass
+
+    # Knowledge fills what the stores left, in its own try: a broken knowledge
+    # file must cost the K hints only — not the store hints, not the nudge.
+    remaining = MAX_HINT_PATTERNS - len(hint_ids)
+    if remaining > 0:
+        try:
+            hint_ids = hint_ids + [
+                pattern_id
+                for pattern_id in collect_knowledge_hints(
+                    prompt,
+                    knowledge_source_paths(project_index),
+                    exclude=hint_ids,
+                    limit=remaining,
+                )
+                if valid_knowledge_id(pattern_id)
+            ]
+        except Exception as exc:
+            try:
+                sys.stderr.write(
+                    "ani_trigger: knowledge lookup failed: {0}\n".format(exc)
+                )
+            except Exception:
+                pass
 
     if not slug and not hint_ids:
         return

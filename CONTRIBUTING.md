@@ -39,7 +39,9 @@ one sentence:
 
 Attach a real transcript of that run to the PR — the prompt you sent, the agent's reply, and the
 resulting file. Redact freely; we need the shape of the exchange, not your code. A transcript
-with the correction and the created file path is enough.
+with the correction and the created file path is enough. If the harness runs Python, include the
+output of `python scripts/ani_doctor.py` from that machine too — it is the fastest way for a
+reviewer to see what your environment actually resolved.
 
 If the F file does not appear, that is a genuinely useful finding too — open an issue with the
 transcript instead. It usually means the harness needs a different instruction-loading path, and

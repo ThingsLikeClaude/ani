@@ -37,7 +37,8 @@ Initial release.
   marker contract), `AGENTS.md` snippet, a generic minimal convention for any file-capable
   agent, and the bootstrap flow.
 - **Claude Code hook adapters** (`hooks/ani_trigger.py`, `hooks/ani_session_start.py`,
-  `hooks/hooks.json`, `hooks/run-hook.cmd`) — stdlib-only, read-only, silent on every failure. A
+  `hooks/hooks.json`, `hooks/run-hook.cmd`) — stdlib-only, read-only, and silent on every failure
+  except the one below that must not be silent (a missing interpreter). A
   `UserPromptSubmit` hook injects `[ani-nudge]` and `[ani-hint]` markers (at most three pattern
   ids across both stores), and a `SessionStart` hook injects `[ani-index v1]` — both stores'
   usable rows under one combined 6 KiB budget, labelled by store, plus at most one line naming
@@ -47,6 +48,31 @@ Initial release.
   path, unknown or empty statuses fail closed, code fences in injected rows are neutralised,
   session ids are reduced to a safe alphabet, and reads are bounded (16 KiB index, 256 KiB
   payload, 64 KiB pattern file). Configured store paths expand `~` and nothing else.
+- **Knowledge sources — the optional wiki bridge**
+  (`skills/ani/references/adapters/knowledge-source.md`) — the `UserPromptSubmit` hint engine can
+  additionally match claims compiled out of *any* wiki (Obsidian, Zettelkasten, a plain markdown
+  handbook), named by `knowledge_sources` in `config.md`: comma-separated absolute paths, the
+  project list then the global one, deduped, at most 4 used, with `ANI_KNOWLEDGE_SOURCES`
+  replacing both lists outright. A knowledge file is the same six-column table as `INDEX.md`; a
+  row is used only when its id matches `^K-[a-z0-9]+(?:-[a-z0-9]+)*$` (≤ 64 chars) and its status
+  is `active`, everything else is dropped silently, and a file past a 16 KiB cap is skipped whole
+  rather than truncated. `K` ids ride the existing `[ani-hint v1]` line after the `S` ids under
+  the same cap of three and never displace one — priority runs current request > safety >
+  project S > global S > knowledge claim. Nothing is injected at session start, and a user
+  without a wiki configures nothing and sees no change: their correction store *is* their
+  knowledge store.
+- **Operation guarantees — no silent failure** — `[ani-index v1]` is the handshake: a session
+  that never shows one means the hooks are not firing, so the skill switches to manual mode,
+  reads the `INDEX.md` files itself, runs the protocol unchanged, and tells the user once.
+  *Hooks are accelerators; the protocol is the guarantee.* `/ani doctor`
+  (`scripts/ani_doctor.py`) checks the Python interpreter, store resolution plus a write probe,
+  `INDEX.md` parse counts, knowledge-source validation, and the plugin install, printing one
+  `OK` / `WARN` / `FAIL` line per check (exit `0` clean, `1` warnings, `2` failures) — and says
+  outright that it cannot verify hook firing, pointing at `[ani-index v1]` in a fresh session as
+  the real test. Install instructions now end at "run `/ani doctor` until all green". Finally,
+  `hooks/run-hook.cmd` no longer dies quietly when no `python3`/`python`/`py` is on `PATH`: the
+  session-start invocation emits a one-line manual-mode notice, while the per-prompt invocation
+  stays silent so the warning cannot become noise.
 - **Bootstrap miner** (`scripts/ani_bootstrap.py`) — `/ani bootstrap [--days N]` scans existing
   Claude Code transcripts offline and read-only, clusters past correction moments by keyword
   overlap, and prints a digest for bulk approval into the global store, so a new store does not

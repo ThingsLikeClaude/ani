@@ -40,7 +40,10 @@ if %ERRORLEVEL% equ 0 (
     exit /b 0
 )
 
-REM No interpreter: stay silent rather than fail the session.
+REM No interpreter. The session-start hook says so once, in the one place the
+REM user will read it; every other invocation stays silent, because a notice on
+REM every prompt is spam, not a diagnostic.
+if /i "%~1"=="session-start" echo {"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"[ani] hooks installed but no python3/python/py on PATH - running in manual mode: read your .ani/INDEX.md at session start yourself. Install Python, then run /ani doctor."}}
 exit /b 0
 ANI_BATCH_BLOCK
 
@@ -68,6 +71,13 @@ done
 
 if command -v py >/dev/null 2>&1; then
     exec py -3 "${ani_hook_dir}/${ani_script}"
+fi
+
+# No interpreter, same rule as the batch section: one notice, at session start
+# only. printf rather than echo -- echo's handling of backslashes and leading
+# dashes is implementation-defined, and this line has to arrive byte for byte.
+if [ "$ani_script" = "ani_session_start.py" ]; then
+    printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"[ani] hooks installed but no python3/python/py on PATH - running in manual mode: read your .ani/INDEX.md at session start yourself. Install Python, then run /ani doctor."}}'
 fi
 
 exit 0

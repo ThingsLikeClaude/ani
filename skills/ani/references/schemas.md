@@ -36,10 +36,11 @@ either one:
   the project store when the overlay exists; the user's general working style
   goes to the global store. **Ambiguous → global** (personal knowledge leaking
   into a team repo is the more expensive mistake).
-- **Search and injection read both**, project first. Matching priority is
-  unchanged: current request > safety/permissions > project store S > global
-  store S. Inside a store, `active` outranks `provisional`. One id present in
-  both stores is one pattern — the project copy wins.
+- **Search and injection read both**, project first. Matching priority: current
+  request > safety/permissions > project store S > global store S > knowledge
+  claim (§6, only when the optional bridge is configured). Inside a store,
+  `active` outranks `provisional`. One id present in both stores is one
+  pattern — the project copy wins.
 - **Concurrency** is handled the same way in both: the `rand8` filename suffix
   plus "INDEX is a regenerable cache" (§3). The global store is written by
   several sessions at once and needs no lock for it.
@@ -210,6 +211,7 @@ be present. Keys live in a YAML frontmatter block; the body is free-form notes.
 | `index_budget` | `<rows>/<size>` | `60/6KB` | INDEX ceiling. Raise only with a reason; a bloated INDEX stops being free to keep in context. |
 | `evidence_threshold` | integer | `5` | The T in "auto-compile when E ≥ T". Higher = more conservative. |
 | `auto_promote` | boolean | `false` | Allow unattended `provisional` → `active` promotion after 2 surviving applications in different sessions. Leave `false` in team repos — PR review is the natural gate. |
+| `knowledge_sources` | comma-separated paths | `[]` | Absolute paths to external knowledge index files (§6). Read from **both** configs — the project overlay's list first, then the global store's — merged and deduped, **at most 4 used** after the merge. Each entry expands `~` and nothing else. Unset means ani behaves exactly as it always has. |
 
 ```markdown
 ---
@@ -218,6 +220,7 @@ triggers_extra:
   - "again with the mock data"
 evidence_threshold: 6
 auto_promote: false
+knowledge_sources: /home/you/vault/.export/ani-claims.md
 ---
 
 Notes for humans reading this repo's ani store go here.
@@ -344,3 +347,78 @@ properties in `src/styles/tokens.css`.
 | S-dark-mode-tokens | active | project | dark-mode, css, background, tokens | Use when a request asks to make something lighter/darker in dark mode | 2026-08-28 |
 | F-20260828-a1b2c3d4 | compiled | acme-web | dark-mode, css, background, tokens | Changed text color inside a component when asked for a darker background | 2026-08-28 |
 ```
+
+---
+
+## 6. K — knowledge claim (optional)
+
+A third id prefix, and the only one ani does not create. `F` and `S` are written
+by the protocol into a store; **`K` rows arrive from outside it** — claims
+compiled out of a wiki the user already keeps (Obsidian, a Zettelkasten, a plain
+markdown handbook) and exported to a file named in `knowledge_sources` (§4).
+
+Nothing here is required. A user without a wiki configures nothing, and ani's
+behavior is unchanged: their correction store *is* their growing knowledge.
+
+### File contract
+
+A knowledge source is **one markdown file** holding the same six-column table as
+`INDEX.md` (§3) — same columns, same order, same header. It is never a store, it
+holds no `patterns/` directory, and **ani only ever reads it**: no capture, no
+status change, no INDEX row is ever written back to a knowledge file.
+
+| Column | Meaning for a K row |
+| --- | --- |
+| `id` | `K-<slug>`, grammar below. The only field echoed into a turn's context. |
+| `status` | Must be `active` to be eligible. Anything else — `draft`, `retired`, blank, unrecognised — drops the row. |
+| `scope` | Free-form and advisory (the vault, the area). ani does not act on it. |
+| `keywords` | Comma-separated lowercase tokens. **This is the match surface** — the prompt is intersected with these. |
+| `summary` | The claim, one line, ending in a pointer back to the source note ("… — see note 0010"). It points at compiled knowledge; it does not restate it. |
+| `updated` | `YYYY-MM-DD` of the source note. Advisory. |
+
+### Id grammar
+
+```
+^K-[a-z0-9]+(?:-[a-z0-9]+)*$      total length ≤ 64
+```
+
+The same shape as an `S-` id with a different prefix: lowercase, digits, single
+hyphens between segments, no trailing hyphen, no whitespace, no unicode. The
+prefix is load-bearing — it is what keeps a claim out of the pattern namespace,
+so a claim can never be mistaken for a verified `S`.
+
+Map your wiki's own ids onto it stably and reversibly: Folgezettel `0010` →
+`K-0010`, a title → `K-dark-mode-tokens`, a path → `K-ops-runbooks-pager`. Full
+mapping advice, export guidance, and a complete example live in
+`references/adapters/knowledge-source.md`.
+
+### Eligibility, and everything that is dropped
+
+A row is used **only** if the id matches the grammar above **and** the status is
+exactly `active`. Every other row is dropped silently — no warning, no error, no
+partial acceptance. This is fail-closed by design: a knowledge file is a build
+output from a system ani does not control, so anything it cannot vouch for
+simply does not exist.
+
+The file itself is read up to **16 KiB**; past that it is skipped whole rather
+than truncated, so a runaway export cannot half-load. A path that is missing,
+unreadable, a directory, or malformed costs its own rows and nothing else. Rows
+are treated as untrusted input exactly as `INDEX.md` rows are (§3): an id is
+validated against the grammar before it is ever echoed or joined onto a path.
+
+### How K rows are matched
+
+- **At `UserPromptSubmit` only.** Knowledge claims are never injected at session
+  start. Correction patterns earn a standing context cost by being few and
+  verified; a wiki does not, and a silent turn costs nothing.
+- K ids join the existing `[ani-hint v1] patterns=` line **after** the S ids,
+  under the same cap of 3 ids total. They fill only the slots the stores left
+  empty — a claim never displaces a pattern.
+- Matching priority, extended by one rung at the bottom:
+  **current request > safety/permissions > project store S > global store S >
+  knowledge claim.**
+- **Only the id travels.** The summary cell is parsed for the table's shape and
+  then discarded — no prose from a knowledge file ever reaches the model on its
+  own. Resolve a `K-` id by finding its row in the configured source, then open
+  the note that row points at. A hinted K id is a candidate, like any hinted
+  id — read before acting, cite when it shaped the work.

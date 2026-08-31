@@ -65,6 +65,7 @@ overlay only when the user asks for it. Never write outside a store. Fields:
 | 2 | Safety and permission constraints |
 | 3 | Project store S patterns (repo-local) |
 | 4 | Global store S patterns (personal) |
+| 5 | Knowledge claims (`K-` ids), only when a knowledge source is configured |
 
 Store rank dominates; inside a store, `active` outranks `provisional`. One id in
 both stores is one pattern: the project copy wins and the global one is ignored.
@@ -76,6 +77,12 @@ both stores is one pattern: the project copy wins and the global one is ignored.
    human-approved) — tell me if it is wrong." The user can veto at any time.
 7. Whenever a pattern shaped your action, cite its ID in your reply.
 
+**Knowledge sources (optional).** With `knowledge_sources` set in config.md, a
+hint may also carry `K-` ids. Resolve one by reading that file's matching row: it
+is a one-line claim pointing into the user's own wiki ("… see note 0010"). Open
+the note rather than re-derive it, cite the id, never rank a claim above a
+pattern. Contract: `references/adapters/knowledge-source.md`.
+
 ### Hook markers (optional Tier 1 adapters)
 
 An adapter may prepend a marker to the prompt. The core works without them.
@@ -83,7 +90,16 @@ An adapter may prepend a marker to the prompt. The core works without them.
 | Marker | Meaning | How to consume |
 | --- | --- | --- |
 | `[ani-nudge v1] session=<id> prompt_sha=<8hex> pattern=<slug>` | deterministic correction detection | Consume **only** if `session` matches the current session and `prompt_sha` matches this turn's prompt. Otherwise ignore silently — it is a stale marker from another turn. |
-| `[ani-hint v1] patterns=<S-id,...>` | keyword overlap between the prompt and INDEX | Treat as search hints. Still verify semantic fit; drop the ones that do not fit. |
+| `[ani-hint v1] patterns=<S-id,…[,K-id,…]>` | keyword overlap between the prompt and the INDEXes, plus any configured knowledge source | Treat as search hints. Still verify semantic fit; drop the ones that do not fit. `K-` ids always come last. |
+| `[ani-index v1]` + rows | session-start injection of both stores' INDEX rows | Use as resident candidates. Its **absence** is the handshake failure below. |
+
+**Handshake — the missing heartbeat.** `[ani-index v1]` is the hooks' proof of
+life. If a session never shows one, treat the hooks as not firing: switch to
+**manual mode** — read each store's `INDEX.md` yourself (Path A step 1) and run
+every step of the protocol unchanged. If a store does turn out to exist, say so
+**once**, plainly ("ani hooks look inactive — running manual mode; try
+`/ani doctor`"), and never mention it again that session. **Hooks are
+accelerators; the protocol is the guarantee.**
 
 Never echo markers back to the user. Absence of a marker never means "no
 correction happened" — **you are the detector**, the markers are reinforcement.
@@ -293,6 +309,7 @@ plain `/ani`.
 | `/ani ok <S-id>` | Promote a `provisional` S to `active` |
 | `/ani resolve <F-id>` | Spend a dedicated run on one unresolved F: reproduce, resolve, verify, compile. The **only** licence to work a failure outside live work |
 | `/ani bootstrap [--days N]` | Mine past sessions for corrections, cluster them, and present a digest for bulk approval — see `references/adapters/bootstrap.md` |
+| `/ani doctor` | Run `scripts/ani_doctor.py` (Bash): python, store resolution and write probe, INDEX parse counts, knowledge sources, plugin install. Prints `OK`/`WARN`/`FAIL` per check; exit `0` clean, `1` warnings, `2` failures. It cannot see whether hooks fire — only `[ani-index v1]` in a fresh session shows that |
 
 ## Red flags — stop and correct course
 
@@ -317,4 +334,5 @@ plain `/ani`.
 - `references/triggers.md` — multilingual phrase hints, extendable per project.
 - `templates/F-template.md`, `templates/S-template.md` — ready-to-copy files.
 - `references/adapters/` — platform specifics (hooks, transcript mining,
-  rewind/clear commands). Optional; the core is complete without them.
+  rewind/clear commands) and `knowledge-source.md`, the wiki bridge. Optional;
+  the core is complete without them.

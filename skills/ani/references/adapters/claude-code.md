@@ -6,7 +6,7 @@ zero-LLM-call hooks on top:
 
 | Event | Script | What it injects |
 | --- | --- | --- |
-| `UserPromptSubmit` | `hooks/ani_trigger.py` | `[ani-nudge v1]` on a canonical correction phrase, `[ani-hint v1]` on an INDEX keyword match |
+| `UserPromptSubmit` | `hooks/ani_trigger.py` | `[ani-nudge v1]` on a canonical correction phrase, `[ani-hint v1]` on an INDEX keyword match — `S-` ids first, then `K-` ids from configured knowledge sources in the leftover slots |
 | `SessionStart` | `hooks/ani_session_start.py` | `[ani-index v1]` — both stores' `INDEX.md` rows, so the pattern summaries are resident before the first prompt |
 
 Both read **two stores**: the global one (`~/.ani` by default) and the project overlay
@@ -64,6 +64,20 @@ on all three axes:
   `schemas.md` §3) and the stdin payload only up to 256 KiB. Past either cap
   the hook stops: an oversized INDEX costs the hint, an oversized payload
   costs the whole turn's output. Both are silent, both exit 0.
+
+**c. Knowledge hints (optional).** When `knowledge_sources` names external
+knowledge index files (`schemas.md` §6, `adapters/knowledge-source.md`), their
+`active` `K-` rows go through the same keyword matcher — particle stripping
+included — and fill only the slots the stores left, under the same 3-id total
+cap: a K id can never displace an S id. Resolution: `ANI_KNOWLEDGE_SOURCES`
+(comma-separated, REPLACES the configured lists; present-but-empty means
+none) — else the project overlay's `config.md` list, then the global store's,
+deduplicated, at most 4 files. Each file obeys the INDEX rules: same 6-column
+table, 16 KiB fail-closed cap (an oversized file is skipped whole), ids pinned
+to `^K-[a-z0-9]+(?:-[a-z0-9]+)*$` (≤ 64), any other status or shape silently
+dropped. A broken knowledge file costs the K hints only — never the store
+hints, never the nudge. Knowledge is trigger-time only: the SessionStart
+injection deliberately never reads it.
 
 The session id in the nudge marker is reduced to `[A-Za-z0-9._-]` for the same
 reason.
@@ -218,6 +232,15 @@ overlay that has a `config.md` but no `INDEX.md` yet contributes no
 overlay has an index; the skill itself reads `config.md` directly and is
 unaffected.
 
+`knowledge_sources` rides the same reader and inherits the same rules and the
+same limitation: one scalar key from `config.md` frontmatter, each path
+expanded with `expanduser` and nothing else, and a store the hooks cannot find
+contributes no list. `ANI_KNOWLEDGE_SOURCES` is the corresponding escape hatch.
+Write the paths **absolute**: a relative entry resolves against the process
+cwd, not the config file's directory. And because the list is comma-separated,
+a path containing a literal comma cannot be expressed — there is no escape
+syntax; rename the file instead.
+
 ## 2. How the skill must validate a nudge
 
 A marker is evidence about **one specific turn**. Stale markers are the known
@@ -270,7 +293,10 @@ For a local checkout:
 
 `${CLAUDE_PLUGIN_ROOT}` is resolved by Claude Code, so no paths need editing.
 Verify with `/hooks` — both `UserPromptSubmit` and `SessionStart` should list an
-ani command — and confirm the skill is loadable with `/skills`.
+ani command — and confirm the skill is loadable with `/skills`. Finish with the
+self-check, `python scripts/ani_doctor.py` (the skill runs it as `/ani doctor`),
+and keep going until it reports all green; it cannot verify hook firing itself,
+so the last word is a fresh session showing `[ani-index v1]`.
 
 **Command names.** This document writes `/ani` as the protocol's short form.
 A plugin skill is namespaced `plugin-name:skill-name`, so with the plugin
@@ -284,8 +310,10 @@ that works everywhere. Most POSIX distributions ship `python3` and either lack
 launcher and has no `python3` at all. Hard-coding either name breaks half the
 installs, so `hooks/run-hook.cmd` resolves it at run time: under bash
 `python3` → `python` → `py -3`, under `cmd.exe` `python` → `py -3`. With none of
-them present it exits 0 in silence and the plugin degrades to Tier 0, which is
-a supported configuration rather than an error.
+them present, the session-start invocation emits a one-line manual-mode notice
+(install Python, run `/ani doctor`) and every other invocation exits 0 in
+silence — the plugin degrades to Tier 0, which is a supported configuration
+rather than an error, and no longer a silent one.
 
 The file is a cmd/bash polyglot: bash swallows the batch half as a quoted
 heredoc (read from the script file, so the hook's stdin is untouched), and
@@ -407,9 +435,14 @@ neither ever writes to either store, or anywhere else.
   `active`/`provisional` rows anywhere → the session hook prints nothing.
 - Nothing detected → no output at all, so the hooks stay invisible in normal
   use.
-- Hooks not installed, no interpreter found, timeout exceeded → Claude Code
-  drops the (empty) output and the turn proceeds. The skill's semantic
-  detection is unaffected; you lose the deterministic assist, not the protocol.
+- Hooks not installed or a timeout exceeded → Claude Code drops the (empty)
+  output and the turn proceeds. No interpreter found → the session-start
+  invocation says so once with a manual-mode notice (§3); every other
+  invocation stays silent. Either way the skill's semantic detection is
+  unaffected; you lose the deterministic assist, not the protocol.
+- A malformed, oversized (> 16 KiB), missing, or directory-valued knowledge
+  source costs its K hints only. The store hints and the nudge always survive
+  a broken knowledge file.
 
 Debug them directly, without a session:
 

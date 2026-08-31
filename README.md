@@ -22,6 +22,7 @@ failure safe to throw away. If it can read and write files, it can speak ani.
 - [Install](#install)
 - [What gets written](#what-gets-written)
 - [How it works](#how-it-works)
+- [Connect your wiki (optional)](#connect-your-wiki-optional)
 - [Design](#design)
 - [FAQ](#faq)
 - [Privacy](#privacy)
@@ -83,6 +84,31 @@ verified harness at a time — [contributions welcome](CONTRIBUTING.md).
 **Day one is not an empty store.** `/ani bootstrap [--days N]` mines your Claude Code transcripts
 for past corrections, clusters them, scores them in hindsight, and lets you approve candidates in
 one batch ([`adapters/bootstrap.md`](skills/ani/references/adapters/bootstrap.md)).
+
+### Then run `/ani doctor` until everything is green
+
+Whichever path you took, this is the last install step — not an optional one:
+
+```
+/ani doctor
+```
+
+It checks your Python, resolves both stores and probes that they are actually writable, parses
+each `INDEX.md`, validates any knowledge sources, and looks for the hook registration. One
+`OK` / `WARN` / `FAIL` line per check; exit `0` clean, `1` warnings, `2` failures. Keep fixing and
+re-running until nothing but `OK` comes back — that, rather than a feeling, is what "installed"
+means here.
+
+The one thing it *cannot* check is whether the hooks actually fire, because that happens outside
+its process. It says so, and points you at the real test: open a fresh session and look for an
+`[ani-index v1]` block.
+
+**If the hooks are not firing, nothing is lost.** `[ani-index v1]` is the heartbeat. When a
+session never shows one, ani switches to **manual mode**: it reads the `INDEX.md` files itself,
+runs the same five steps, and tells you once so you can run `/ani doctor`. If no Python
+interpreter is on `PATH` at all, the session-start hook says exactly that in one line instead of
+dying quietly. You lose the deterministic assist, never the protocol — **hooks are accelerators;
+the protocol is the guarantee.**
 
 ---
 
@@ -245,6 +271,44 @@ Only these signals count; threshold `T` defaults to 5.
 Silence is not satisfaction and "thanks" may be manners, so behavior outweighs sentiment and
 **automation is capped at the provisional rung**. Mixed utterances (*"nice, but change X"*) score
 per topic — see the cushion rule in [docs/design.md](docs/design.md).
+
+---
+
+## Connect your wiki (optional)
+
+**Without a wiki, ani is already complete.** You configure nothing, nothing about its behavior
+changes, and your correction store *is* your growing knowledge. That is the product, not a
+degraded mode.
+
+If you do keep one — Obsidian, a Zettelkasten, a docs folder, a handbook in plain markdown — one
+config line connects it:
+
+```markdown
+---
+knowledge_sources: /home/you/vault/.export/ani-claims.md
+---
+```
+
+That path points at a table in the same six columns as `INDEX.md`, one row per **claim**, written
+by whatever your wiki can script:
+
+```markdown
+| id | status | scope | keywords | summary | updated |
+| --- | --- | --- | --- | --- | --- |
+| K-0010 | active | zettel | postgres, index, composite | Composite index column order follows selectivity — see note 0010 | 2026-08-14 |
+```
+
+A claim is a **pointer, not a copy**. The keywords let the agent recognise the situation; the
+summary sends it to *your* note, so it works from the conclusion you already reached instead of
+re-deriving half of it from raw transcripts. Same architecture as the store itself — a compiled
+index, deterministic matching, a budgeted hint, the body pulled only when needed — one layer out.
+
+The rules are deliberately small. A row needs a `K-…` id and `active` status or it is dropped
+silently; a source file is read up to 16 KiB; at most 4 sources, and at most 3 hinted ids per
+prompt, with claims filling only the slots patterns did not take. **A claim never outranks a
+verified pattern**, and matching happens only when you type a prompt — never at session start —
+so a wiki you never mention costs nothing. Export contract, id mapping, and a worked example:
+[`adapters/knowledge-source.md`](skills/ani/references/adapters/knowledge-source.md).
 
 ---
 

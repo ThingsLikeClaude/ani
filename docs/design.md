@@ -267,10 +267,34 @@ The same four conventions serve both tiers, which is why a second store costs on
 resolution and no new machinery.
 
 Matching priority, when several sources disagree: **the current user request > safety and
-permission constraints > project store patterns > global store patterns.** Store rank dominates;
+permission constraints > project store patterns > global store patterns > knowledge claims**
+(the last rung only when the optional bridge below is configured). Store rank dominates;
 inside a store, `active` outranks `provisional`; an id present in both stores is one pattern and
 the project copy wins. "Apply as written" refers to the procedure and the verification, never to
 the parameters of the original incident — those are re-interpreted for the request at hand.
+
+### Knowledge sources: the same architecture, one layer out
+
+An optional bridge lets the hint engine also match rows from an external knowledge index — claims
+compiled out of a wiki the user already keeps. It is worth saying why that is not a new subsystem.
+
+The correction store and a wiki export are **two instances of one architecture**: a compiled index
+of one-line summaries, deterministic matching against it, a budgeted hint naming ids, and the body
+pulled only once an id has earned it. `INDEX.md` is that shape over the pattern files; a knowledge
+file is that shape over someone's notes. Nothing had to be invented to add the second one — same
+six columns, same id validation, same hint line.
+
+It is also P2 held consistently. *Compile, don't just remember* says a raw log is search noise
+until it is compiled; a wiki is precisely a pile that someone **already** compiled. The waste
+being attacked is an agent re-deriving, badly, a conclusion its user wrote down months ago. So a
+claim points — "see note 0010" — and never carries the body. Compile once, reference many times.
+
+Two asymmetries keep the bridge honest. A claim ranks **below** every verified pattern, because a
+pattern carries verification conditions and a counterexample history while a claim carries an
+assertion. And claims are matched only at prompt time, never injected at session start: the
+standing 6KB belongs to the store that earned it by being small and verified, and an unmatched
+prompt should cost nothing. Users without a wiki configure nothing and see nothing change — their
+correction store *is* their knowledge store, which was the point from the beginning.
 
 ---
 
