@@ -38,6 +38,10 @@ Never report the digest as a complete inventory of past failures.
 
 ## 2. Running it
 
+Run from the install root — the directory that holds `scripts/`: the plugin
+root in a plugin install (two directories above the skill's SKILL.md), the
+repo root in a checkout. Or call the script by its absolute path.
+
 ```bash
 python scripts/ani_bootstrap.py [--claude-dir PATH] [--project SLUG] [--days N] [--out FILE]
 ```

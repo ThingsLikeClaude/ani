@@ -141,8 +141,10 @@ do one thing, fix.
 - Get today's date from the `date` command (or the platform equivalent). **Never
   from memory or from context.**
 - Pick the store by the routing rule above, then create
-  `<store>/patterns/F-<YYYYMMDD>-<rand8>.md` from `templates/F-template.md` — the
-  random 8-char suffix is what makes concurrent sessions collision-free.
+  `<store>/patterns/F-<YYYYMMDD>-<rand8>.md` from `templates/F-template.md` at
+  the install root (see References; no templates present → build the file from
+  `references/schemas.md`) — the random 8-char suffix is what makes concurrent
+  sessions collision-free.
 - Does this correction match an already-captured F class (INDEX keywords)?
   Increment that F's `recurrence` instead of opening a duplicate class.
 - `## Excerpt` is REQUIRED and must be a **self-contained verbatim** exchange:
@@ -179,7 +181,8 @@ Two paths. Human approval raises the trust grade; it does not gate use.
 | Automatic | evidence score E ≥ T (default 5; `evidence_threshold` in config.md) | `provisional` |
 | Manual | `/ani ok <F-id>`, or equivalent explicit approval in natural language | `active` |
 
-Write the S file from `templates/S-template.md` into the F's own store, set
+Write the S file from `templates/S-template.md` (install root, as in CAPTURE)
+into the F's own store, set
 `compiled_from: [<F-id>]`, then set the F's `status: compiled`. Never delete the
 F — it is the provenance and the anchor for counterexamples.
 
@@ -309,7 +312,7 @@ plain `/ani`.
 | `/ani ok <S-id>` | Promote a `provisional` S to `active` |
 | `/ani resolve <F-id>` | Spend a dedicated run on one unresolved F: reproduce, resolve, verify, compile. The **only** licence to work a failure outside live work |
 | `/ani bootstrap [--days N]` | Mine past sessions for corrections, cluster them, and present a digest for bulk approval — see `references/adapters/bootstrap.md` |
-| `/ani doctor` | Run `scripts/ani_doctor.py` (Bash): python, store resolution and write probe, INDEX parse counts, knowledge sources, plugin install. Prints `OK`/`WARN`/`FAIL` per check; exit `0` clean, `1` warnings, `2` failures. It cannot see whether hooks fire — only `[ani-index v1]` in a fresh session shows that |
+| `/ani doctor` | Run `scripts/ani_doctor.py` from the **install root** (Bash; the root is two directories above this SKILL.md — see References): python, store resolution and write probe, INDEX parse counts, knowledge sources, plugin install. Prints `OK`/`WARN`/`FAIL` per check; exit `0` clean, `1` warnings, `2` failures. It cannot see whether hooks fire — only `[ani-index v1]` in a fresh session shows that |
 
 ## Red flags — stop and correct course
 
@@ -330,9 +333,16 @@ plain `/ani`.
 
 ## References
 
+Everything under `references/` sits beside this SKILL.md. `scripts/` and
+`templates/` do **not**: they live at the **install root**, two directories
+above this file — the plugin root in a plugin install (the cached plugin
+directory), the repo root in a checkout. A skill-directory-only install
+carries neither: build F/S files from `references/schemas.md` and skip
+`/ani doctor` — the protocol is complete without them.
+
 - `references/schemas.md` — canonical F/S/INDEX/config field spec + worked example.
 - `references/triggers.md` — multilingual phrase hints, extendable per project.
-- `templates/F-template.md`, `templates/S-template.md` — ready-to-copy files.
+- `templates/F-template.md`, `templates/S-template.md` (install root) — ready-to-copy files.
 - `references/adapters/` — platform specifics (hooks, transcript mining,
   rewind/clear commands) and `knowledge-source.md`, the wiki bridge. Optional;
   the core is complete without them.

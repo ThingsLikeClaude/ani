@@ -294,7 +294,9 @@ For a local checkout:
 `${CLAUDE_PLUGIN_ROOT}` is resolved by Claude Code, so no paths need editing.
 Verify with `/hooks` — both `UserPromptSubmit` and `SessionStart` should list an
 ani command — and confirm the skill is loadable with `/skills`. Finish with the
-self-check, `python scripts/ani_doctor.py` (the skill runs it as `/ani doctor`),
+self-check, `python scripts/ani_doctor.py` run from the plugin root — the
+cached plugin directory, two levels above the skill's SKILL.md (the skill runs
+it as `/ani doctor`),
 and keep going until it reports all green; it cannot verify hook firing itself,
 so the last word is a fresh session showing `[ani-index v1]`.
 

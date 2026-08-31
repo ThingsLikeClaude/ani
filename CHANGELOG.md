@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Docs: `scripts/` and `templates/` located from the skill directory.** SKILL.md referenced
+  `scripts/ani_doctor.py` and `templates/*.md` as if they sat beside it, but in a plugin install
+  they live at the plugin root, two directories above SKILL.md. A real first-install session
+  followed the documented path and found nothing. SKILL.md now defines the **install root** once
+  (References section) and points every mention at it; `adapters/bootstrap.md` and
+  `adapters/claude-code.md` carry the same locator. Skill-directory-only installs (no `scripts/`
+  or `templates/`) are told to build files from `references/schemas.md` and skip `/ani doctor`.
+
 ## [0.1.0] - 2026-08-28
 
 Initial release.
