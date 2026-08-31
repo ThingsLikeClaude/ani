@@ -52,13 +52,7 @@ ani does three things about it:
 
 In one picture:
 
-```mermaid
-flowchart LR
-    U["😤 no, that's not it…"] --> F["📝 failure pattern F<br/>a file outside the context window"]
-    F --> S["✅ success pattern S<br/>compiled with mandatory verification"]
-    S --> N["🔎 consulted before the next request"]
-    N -. catches the mistake before it repeats .-> U
-```
+<img src="docs/assets/ani-loop-en.svg" width="880" alt="the ani correction loop: a correction is captured as failure pattern F, compiled into success pattern S, and consulted before the next request">
 
 ---
 
@@ -126,13 +120,7 @@ Right after install the store (`~/.ani/`) does not exist yet, so doctor shows tw
 fresh session shows **no** `[ani-index v1]` — that is normal: the heartbeat starts once there is
 a heart to record. Verify by doing, not by feeling:
 
-```mermaid
-flowchart TD
-    A["① /ani doctor — zero FAILs<br/>two WARNs (no store yet) are normal"] --> B["② make one correction in any session<br/>no, that's not it…"]
-    B --> C{"did ~/.ani/patterns/<br/>gain an F-*.md file?"}
-    C -->|yes| D["③ open a fresh session — the ani-index v1<br/>heartbeat appears. Install verified 🎉"]
-    C -->|no| E["type /ani to capture manually —<br/>the protocol is complete without hooks;<br/>file an issue and we fix the hook"]
-```
+<img src="docs/assets/ani-selfcheck-en.svg" width="880" alt="install self-check: run /ani doctor for zero FAILs, make one correction, and if an F file appeared the ani-index v1 heartbeat shows in the next session — otherwise capture manually with /ani">
 
 ---
 
@@ -245,17 +233,7 @@ names are English, values may be in any language. Normative spec:
 
 Detection is semantic: the loop runs with or without a hook.
 
-```mermaid
-flowchart TD
-    T["user says something that means no, that's not it — any language"] --> R["① RESTATE<br/>say their real intent back in one line, before anything else<br/>at most one clarifying question"]
-    R --> SE["② SEARCH<br/>scan both INDEX.md files, open only candidate S files<br/>active → apply + cite ID · provisional → same, disclosed<br/>re-corrected after applying one? → counterexample F, that S is demoted"]
-    SE --> FX["③ FIX<br/>carry out the correction — recording never blocks the work"]
-    FX --> CA["④ CAPTURE<br/>write patterns/F-date-rand8.md + refresh INDEX"]
-    CA --> TR["⑤ TRIAGE — advice only<br/>1st correction → continue · 2nd on the same item → rewind<br/>repeated failure → fresh session reading only the F file"]
-    CA --> CP{compile}
-    CP -->|automatic: evidence E ≥ 5| PV["S provisional<br/>usable now, disclosed"]
-    CP -->|manual: /ani ok| AC["S active"]
-```
+<img src="docs/assets/ani-steps-en.svg" width="880" alt="the five-step correction loop: RESTATE the intent, SEARCH both INDEXes, FIX the work, CAPTURE the F file, TRIAGE context health — with the compile fork from CAPTURE into S provisional (automatic) or S active (/ani ok)">
 
 F closes as `compiled`, provenance in `compiled_from`.
 

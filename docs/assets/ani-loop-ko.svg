@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 250" role="img" aria-label="ani 교정 루프: 교정이 F 실패패턴으로 기록되고 S 성공패턴으로 컴파일되어 다음 요청 전에 선제 참조된다" font-family="'Segoe UI','Apple SD Gothic Neo','Malgun Gothic',sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="#44566b"/></marker>
+    <marker id="t" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="#2fd6c3"/></marker>
+  </defs>
+  <rect x="1.5" y="1.5" width="877" height="247" rx="14" fill="#0e1520" stroke="#1e2a38" stroke-width="1.5"/>
+  <text x="28" y="42" font-family="Consolas,'Cascadia Mono',monospace" font-size="11" letter-spacing="3" fill="#48626f">ANI &#183; CORRECTION LOOP</text>
+  <text x="852" y="42" text-anchor="end" font-size="11" fill="#5d7284">교정 한 번이 자산이 되는 경로</text>
+
+  <!-- card 1: the correction -->
+  <g>
+    <rect x="23" y="92" width="176" height="88" rx="10" fill="#151f2b" stroke="#27364a"/>
+    <text x="111" y="126" text-anchor="middle" font-size="13.5" font-weight="600" fill="#e7eef6">&#8220;아니 그게 아니라&#8230;&#8221;</text>
+    <text x="111" y="149" text-anchor="middle" font-size="11" fill="#94a5b8">사용자의 교정 —</text>
+    <text x="111" y="165" text-anchor="middle" font-size="11" fill="#94a5b8">가장 값싼 실패 데이터</text>
+  </g>
+
+  <!-- card 2: F -->
+  <g>
+    <rect x="227" y="92" width="176" height="88" rx="10" fill="#151f2b" stroke="#27364a"/>
+    <rect x="303" y="103" width="24" height="20" rx="6" fill="#2b2415" stroke="#eab54e"/>
+    <text x="315" y="117.5" text-anchor="middle" font-family="Consolas,monospace" font-size="12" font-weight="700" fill="#eab54e">F</text>
+    <text x="315" y="145" text-anchor="middle" font-size="13.5" font-weight="600" fill="#e7eef6">실패패턴</text>
+    <text x="315" y="165" text-anchor="middle" font-size="11" fill="#94a5b8">컨텍스트 밖 파일로 남는다</text>
+  </g>
+
+  <!-- card 3: S -->
+  <g>
+    <rect x="431" y="92" width="176" height="88" rx="10" fill="#151f2b" stroke="#27364a"/>
+    <rect x="507" y="103" width="24" height="20" rx="6" fill="#0f2924" stroke="#2fd6c3"/>
+    <text x="519" y="117.5" text-anchor="middle" font-family="Consolas,monospace" font-size="12" font-weight="700" fill="#2fd6c3">S</text>
+    <text x="519" y="145" text-anchor="middle" font-size="13.5" font-weight="600" fill="#e7eef6">성공패턴</text>
+    <text x="519" y="165" text-anchor="middle" font-size="11" fill="#94a5b8">검증 조건을 달아 컴파일</text>
+  </g>
+
+  <!-- card 4: proactive consult -->
+  <g>
+    <rect x="635" y="92" width="176" height="88" rx="10" fill="#151f2b" stroke="#27364a"/>
+    <rect x="706" y="103" width="34" height="20" rx="6" fill="#16222e" stroke="#5d7284"/>
+    <text x="723" y="117.5" text-anchor="middle" font-family="Consolas,monospace" font-size="10.5" font-weight="700" fill="#8fa3b6">IDX</text>
+    <text x="723" y="145" text-anchor="middle" font-size="13.5" font-weight="600" fill="#e7eef6">선제 참조</text>
+    <text x="723" y="165" text-anchor="middle" font-size="11" fill="#94a5b8">다음 요청 전에 먼저 대조</text>
+  </g>
+
+  <!-- forward arrows -->
+  <line x1="200" y1="136" x2="223" y2="136" stroke="#44566b" stroke-width="1.6" marker-end="url(#a)"/>
+  <line x1="404" y1="136" x2="427" y2="136" stroke="#44566b" stroke-width="1.6" marker-end="url(#a)"/>
+  <line x1="608" y1="136" x2="631" y2="136" stroke="#44566b" stroke-width="1.6" marker-end="url(#a)"/>
+  <text x="213" y="84" text-anchor="middle" font-size="10.5" fill="#6b7f92">기록</text>
+  <text x="417" y="84" text-anchor="middle" font-size="10.5" fill="#6b7f92">증거가 쌓이면</text>
+  <text x="621" y="84" text-anchor="middle" font-size="10.5" fill="#6b7f92">상주 색인</text>
+
+  <!-- feedback arc -->
+  <path d="M 723 186 C 723 224, 111 224, 111 190" fill="none" stroke="#2fd6c3" stroke-width="1.5" stroke-dasharray="5 5" opacity="0.75" marker-end="url(#t)"/>
+  <rect x="297" y="209" width="240" height="22" rx="11" fill="#0e1520" stroke="#1e2a38"/>
+  <text x="417" y="224" text-anchor="middle" font-size="11" fill="#7fd8cc">같은 실수를 반복하기 전에 잡는다</text>
+</svg>

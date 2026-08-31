@@ -51,13 +51,7 @@ ani는 여기에 세 가지로 대응한다.
 
 한 그림으로:
 
-```mermaid
-flowchart LR
-    U["😤 아니 그게 아니라…"] --> F["📝 F 실패패턴<br/>컨텍스트 밖 파일로 남는다"]
-    F --> S["✅ S 성공패턴<br/>검증 조건을 달아 컴파일"]
-    S --> N["🔎 다음 요청 전에 먼저 대조"]
-    N -. 같은 실수를 반복하기 전에 잡는다 .-> U
-```
+<img src="docs/assets/ani-loop-ko.svg" width="880" alt="ani 교정 루프: 교정이 F 실패패턴으로 기록되고 S 성공패턴으로 컴파일되어 다음 요청 전에 선제 참조된다">
 
 ---
 
@@ -124,13 +118,7 @@ Python을 확인하고, 두 저장소의 경로를 해석해 실제로 쓸 수 �
 `[ani-index v1]`이 **안 보이는 게 정상이다** — 심장박동은 기록할 심장이 생긴 다음부터 뛴다.
 느낌 말고 아래 순서로 확인한다. 3분이면 끝난다.
 
-```mermaid
-flowchart TD
-    A["① /ani doctor — FAIL이 0인지 확인<br/>WARN 두 줄(저장소 없음)은 정상"] --> B["② 아무 세션에서 교정을 한 번 해 본다<br/>아니 그게 아니라 …"]
-    B --> C{"~/.ani/patterns/ 에<br/>F-*.md 파일이 생겼나?"}
-    C -->|예| D["③ 새 세션을 열면 ani-index v1<br/>하트비트가 뜬다 — 설치 검증 끝 🎉"]
-    C -->|아니오| E["/ani 를 직접 입력해 수동 캡처 —<br/>프로토콜은 hook 없이도 완결이다.<br/>이슈로 알려주면 hook을 고친다"]
-```
+<img src="docs/assets/ani-selfcheck-ko.svg" width="880" alt="설치 자가 검증: ① /ani doctor로 FAIL 0 확인 ② 교정 한 번 ③ F 파일이 생겼으면 새 세션에 ani-index v1 하트비트 — 안 생겼으면 /ani로 수동 캡처">
 
 ---
 
@@ -242,17 +230,7 @@ frontmatter가 진실의 원천이고, `INDEX.md`는 언제든 다시 만들 수
 
 탐지는 의미로 한다. hook이 있든 없든 루프는 돈다.
 
-```mermaid
-flowchart TD
-    T["사용자가 아니 그게 아니라 라는 뜻의 말을 한다 — 언어 불문"] --> R["① RESTATE<br/>무엇보다 먼저 진짜 의도를 한 줄로 되짚는다<br/>확인 질문은 많아야 하나"]
-    R --> SE["② SEARCH<br/>두 INDEX.md를 훑고 후보 S만 연다<br/>active → ID 인용해 적용 · provisional → 잠정임을 밝히고 적용<br/>적용했는데 또 교정? → 반례 F + 그 S는 강등"]
-    SE --> FX["③ FIX<br/>교정을 실행한다 — 기록이 일을 막는 일은 없다"]
-    FX --> CA["④ CAPTURE<br/>patterns/F-날짜-난수.md 기록 + INDEX 갱신"]
-    CA --> TR["⑤ TRIAGE — 권고일 뿐이다<br/>첫 교정 → 계속 · 같은 건 2회 → 되감기<br/>반복 실패 → 새 세션에서 F 파일만 읽고 재시도"]
-    CA --> CP{컴파일}
-    CP -->|자동: 증거 E ≥ 5| PV["S provisional<br/>지금 쓸 수 있고, 밝히고 쓴다"]
-    CP -->|수동: /ani ok| AC["S active"]
-```
+<img src="docs/assets/ani-steps-ko.svg" width="880" alt="5단계 교정 루프: ① RESTATE 의도 되짚기 ② SEARCH 두 INDEX 검색 ③ FIX 교정 실행 ④ CAPTURE F 파일 기록 ⑤ TRIAGE 컨텍스트 권고 — CAPTURE에서 컴파일 분기: 자동은 S provisional, /ani ok 승인은 S active">
 
 F는 compiled로 닫히고 출처는 `compiled_from`에 남는다.
 
