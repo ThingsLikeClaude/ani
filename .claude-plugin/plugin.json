@@ -1,6 +1,6 @@
 {
   "name": "ani",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Agent Negative Index — a resolution loop for negative feedback. Use when the user corrects the agent (\"no, that's not what I meant\") — captures the correction as a failure pattern in .ani/, compiles repeated corrections into verified success patterns with executable checks, applies matching patterns before acting, and triages a polluted session toward rewind or a fresh start.",
   "author": {
     "name": "Donghyun"

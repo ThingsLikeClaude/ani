@@ -212,11 +212,9 @@ summary: 다크모드에서 뭔가를 밝게/어둡게 해달라는 요청이 �
 
 **그리고 에이전트 컨텍스트에 남는 INDEX 한 줄**:
 
-```markdown
 | id | status | scope | keywords | summary | updated |
 | --- | --- | --- | --- | --- | --- |
 | S-dark-mode-tokens | active | project | dark-mode, css, background | 다크모드에서 뭔가를 밝게/어둡게 해달라는 요청이 올 때 쓴다 | 2026-08-28 |
-```
 
 frontmatter가 진실의 원천이고, `INDEX.md`는 언제든 다시 만들 수 있는 캐시다. 저장소당 60행 / 6KB
 예산 안에서 움직인다 — 게다가 두 저장소가 세션 시작 시 **하나의** 6KB 주입을 나눠 쓰므로, 두 번째
@@ -285,11 +283,9 @@ knowledge_sources: /home/you/vault/.export/ani-claims.md
 그 경로가 가리키는 것은 `INDEX.md`와 똑같은 6열짜리 표다. 한 행이 **클레임(claim)** 하나이고,
 파일은 당신의 위키가 스크립트로 뽑아낸다.
 
-```markdown
 | id | status | scope | keywords | summary | updated |
 | --- | --- | --- | --- | --- | --- |
 | K-0010 | active | zettel | postgres, index, composite | 복합 인덱스의 컬럼 순서는 질의 순서가 아니라 선택도를 따른다 — 0010 노트 참조 | 2026-08-14 |
-```
 
 클레임은 **복사본이 아니라 포인터다.** keywords가 상황을 알아보게 하고, summary가 *당신의* 노트로
 보낸다. 이미 적어 둔 결론을 원시 트랜스크립트에서 절반만 다시 유도하는 대신, 그 결론에서

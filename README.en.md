@@ -215,11 +215,9 @@ through custom properties in `src/styles/tokens.css`.
 
 **And the INDEX row** that stays in the agent's context:
 
-```markdown
 | id | status | scope | keywords | summary | updated |
 | --- | --- | --- | --- | --- | --- |
 | S-dark-mode-tokens | active | project | dark-mode, css, background | Use when a request asks to make something lighter/darker in dark mode | 2026-08-28 |
-```
 
 Frontmatter is the source of truth; `INDEX.md` is a regenerable cache under a 60-row / 6KB budget
 per store — and both stores share **one** 6KB injection at session start, so a second tier costs no
@@ -289,11 +287,9 @@ knowledge_sources: /home/you/vault/.export/ani-claims.md
 That path points at a table in the same six columns as `INDEX.md`, one row per **claim**, written
 by whatever your wiki can script:
 
-```markdown
 | id | status | scope | keywords | summary | updated |
 | --- | --- | --- | --- | --- | --- |
 | K-0010 | active | zettel | postgres, index, composite | Composite index column order follows selectivity — see note 0010 | 2026-08-14 |
-```
 
 A claim is a **pointer, not a copy**. The keywords let the agent recognise the situation; the
 summary sends it to *your* note, so it works from the conclusion you already reached instead of

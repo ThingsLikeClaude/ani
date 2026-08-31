@@ -5,7 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.1] - 2026-08-31
+
+Documentation release — nothing in the protocol or the code changed.
+
+### Changed
+
+- **Korean-first README.** `README.md` is now the Korean edition; English moved to
+  `README.en.md`. The first audience is Korean Claude Code users.
+- **Hand-designed SVG diagrams** under `docs/assets/` (ko + en) replace the default-theme
+  mermaid blocks: the correction loop in one picture, the five-step loop, and an install
+  self-check flow. Self-backgrounded panels, so they render identically on light and dark
+  GitHub themes with no image hosting.
+- **Install self-check section.** Both READMEs now say explicitly that two doctor WARNs and a
+  missing `[ani-index v1]` right after install are *normal* (no store yet — no heart to beat),
+  and walk the reader through verification by doing: one correction → F file → heartbeat.
 
 ### Fixed
 
@@ -96,4 +110,5 @@ Initial release.
 - **Documentation** — README, [design rationale](docs/design.md), and
   [contribution guide](CONTRIBUTING.md).
 
+[0.1.1]: https://github.com/ThingsLikeClaude/ani/releases/tag/v0.1.1
 [0.1.0]: https://github.com/ThingsLikeClaude/ani/releases/tag/v0.1.0
