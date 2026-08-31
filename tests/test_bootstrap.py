@@ -11,7 +11,9 @@ directory built by this file.
 Run:  python -m unittest discover -s tests -v
 """
 
+import importlib.util
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -32,6 +34,19 @@ FIXTURE_DATE = "2026-08-20"
 
 KO_QUOTE_FRAGMENT = "배경색만 바꾸라고"
 EN_QUOTE_FRAGMENT = "not what I asked"
+
+
+def load_script_module():
+    """Import the miner as a module for unit-level contract tests."""
+    spec = importlib.util.spec_from_file_location("ani_bootstrap_under_test", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def age_file(path: Path, days: int) -> None:
+    stale = (datetime.now(timezone.utc) - timedelta(days=days)).timestamp()
+    os.utime(str(path), (stale, stale))
 
 
 def iso_days_ago(days: int) -> str:
@@ -469,6 +484,135 @@ class TestRobustness(BootstrapTestCase):
         )
         self.assertEqual(completed.returncode, 0)
         self.assertIn(b"--claude-dir", completed.stdout)
+
+
+class TestFileOrdering(BootstrapTestCase):
+    """Issue #1: the file cap must trim oldest history, never the alphabet."""
+
+    def test_days_prefilter_skips_files_older_than_the_window(self):
+        old = self.tmp / "projects" / "aaa-archive" / "old.jsonl"
+        write_transcript(old, [
+            make_entry("assistant", "옛날 세션의 응답", iso_days_ago(30)),
+            make_entry("user", "아니 그게 아니라 옛날 교정", iso_days_ago(30)),
+        ])
+        age_file(old, 30)
+        write_transcript(self.tmp / "projects" / "zzz-active" / "new.jsonl", [
+            make_entry("assistant", "최근 세션의 응답", iso_days_ago(1)),
+            make_entry("user", "아니 그게 아니라 최근 교정", iso_days_ago(1)),
+        ])
+        digest = self.digest_of("--days", "3")
+        self.assertEqual(stat_value(digest, "Files scanned"), 1)
+        self.assertEqual(stat_value(digest, "Files skipped outside window"), 1)
+        self.assertIn("최근 교정", digest)
+        self.assertNotIn("옛날 교정", digest)
+
+    def test_days_zero_disables_the_mtime_prefilter(self):
+        old = self.tmp / "projects" / "aaa-archive" / "old.jsonl"
+        write_transcript(old, [
+            make_entry("user", "아니 그게 아니라 아주 오래된 교정", iso_days_ago(400)),
+        ])
+        age_file(old, 400)
+        digest = self.digest_of("--days", "0")
+        self.assertEqual(stat_value(digest, "Files scanned"), 1)
+        self.assertEqual(stat_value(digest, "Files skipped outside window"), 0)
+        self.assertIn("아주 오래된 교정", digest)
+
+    def test_transcripts_iterate_newest_first_regardless_of_slug_name(self):
+        module = load_script_module()
+        base = self.tmp / "projects"
+        for slug, name, age in [("aaa", "1.jsonl", 300),
+                                ("mmm", "2.jsonl", 30),
+                                ("zzz", "3.jsonl", 3)]:
+            path = base / slug / name
+            write_transcript(path, [make_entry("user", "hello " + slug)])
+            age_file(path, age)
+        order = [slug for slug, _ in module.iter_transcripts(base, "")]
+        self.assertEqual(order, ["zzz", "mmm", "aaa"])
+
+
+class TestResumedSessionDedup(BootstrapTestCase):
+    """Issue #2: a resumed session mirrors its prefix into another slug —
+    the same moment must never count twice or forge the repetition bonus."""
+
+    def test_byte_identical_prefix_counts_as_one_moment(self):
+        stamp = iso_days_ago(2)
+        shared = [
+            make_entry("assistant", "팔레트를 전부 교체했습니다.", stamp),
+            make_entry("user", "아니 그게 아니라 배경색만 바꾸라고", stamp),
+        ]
+        write_transcript(self.tmp / "projects" / "proj-one" / "orig.jsonl", shared)
+        write_transcript(
+            self.tmp / "projects" / "proj-two" / "resumed.jsonl",
+            shared + [make_entry("assistant", "재개된 세션의 추가 응답", stamp)],
+        )
+        digest = self.digest_of()
+        self.assertEqual(stat_value(digest, "Duplicate moments removed"), 1)
+        self.assertEqual(stat_value(digest, "Correction moments found"), 1)
+        section = cluster_sections(digest)[0]
+        self.assertIn("Repetition signal (+2, agent-applied): no", section)
+
+    def test_distinct_corrections_are_not_deduplicated(self):
+        # Same wording family, but different moments — different uuids,
+        # different line content. Must still count as two members.
+        stamp = iso_days_ago(2)
+        write_transcript(self.tmp / "projects" / "acme" / "s1.jsonl", [
+            make_entry("user", "아니 그게 아니라 배경색만 바꾸라고", stamp),
+        ])
+        write_transcript(self.tmp / "projects" / "acme" / "s2.jsonl", [
+            make_entry("user", "아니 그게 아니라 배경색 토큰만 바꾸라고", stamp),
+        ])
+        digest = self.digest_of()
+        self.assertEqual(stat_value(digest, "Duplicate moments removed"), 0)
+        self.assertEqual(stat_value(digest, "Correction moments found"), 2)
+
+
+class TestInjectedTextSkipped(BootstrapTestCase):
+    """Issue #3: user turns written by the harness — command expansions,
+    task notifications, compaction preambles — are not human speech."""
+
+    def test_command_expansion_is_not_mined(self):
+        stamp = iso_days_ago(1)
+        injected = (
+            "<command-message>ani:ani</command-message>\n"
+            "<command-name>/ani:ani</command-name>\n"
+            "스킬 본문에 트리거 목록이 실려 온다: 아니 그게 아니라"
+        )
+        write_transcript(self.tmp / "projects" / "test-project" / "s.jsonl", [
+            make_entry("assistant", "이전 턴의 응답", stamp),
+            make_entry("user", injected, stamp),
+        ])
+        digest = self.digest_of()
+        self.assertEqual(stat_value(digest, "Correction moments found"), 0)
+        self.assertEqual(
+            stat_value(digest, "Machine-injected user turns skipped"), 1)
+
+    def test_compaction_preamble_is_not_mined(self):
+        stamp = iso_days_ago(1)
+        text = (
+            "This session is being continued from a previous conversation. "
+            "요약: 사용자가 「아니 그게 아니라」라고 교정했다"
+        )
+        write_transcript(self.tmp / "projects" / "test-project" / "s.jsonl", [
+            make_entry("user", text, stamp),
+        ])
+        digest = self.digest_of()
+        self.assertEqual(stat_value(digest, "Correction moments found"), 0)
+        self.assertEqual(
+            stat_value(digest, "Machine-injected user turns skipped"), 1)
+
+    def test_skill_document_paste_is_not_mined(self):
+        stamp = iso_days_ago(1)
+        text = (
+            "Base directory for this skill: C:\\somewhere\\skills\\ani\n"
+            "트리거 — 아니 그게 아니라, 그거 말고"
+        )
+        write_transcript(self.tmp / "projects" / "test-project" / "s.jsonl", [
+            make_entry("user", text, stamp),
+        ])
+        digest = self.digest_of()
+        self.assertEqual(stat_value(digest, "Correction moments found"), 0)
+        self.assertEqual(
+            stat_value(digest, "Machine-injected user turns skipped"), 1)
 
 
 if __name__ == "__main__":

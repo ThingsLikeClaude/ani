@@ -5,7 +5,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.2] - 2026-08-31
+
+The three miner defects found by the first real-world sweep, fixed (issues #1, #2, #3).
+
+### Fixed
+
+- **The file cap trims the oldest history, not the alphabet** (#1). `iter_transcripts` now
+  visits files newest-first by mtime, and with `--days N` files last modified before the
+  window are skipped up front (`Files skipped outside window` in the Scan block). Rerunning
+  the originally broken sweep on the same store went from "2,000 files scanned, 12,428
+  skipped over cap, recent projects never opened" to "342 recent files scanned, 0 over cap".
+- **Resumed sessions can no longer forge the repetition bonus** (#2). A session resumed under
+  another project slug mirrors its transcript prefix byte-for-byte; moments are now
+  deduplicated before clustering, keyed on entry uuid (fallback: timestamp + line + quote)
+  and counted as `Duplicate moments removed`.
+- **Machine-injected user turns are no longer mined** (#3). Slash-command expansions (which
+  embed skill documents — ani's own trigger list included), task notifications and
+  compaction preambles are skipped and counted as `Machine-injected user turns skipped`. On
+  the real store this removed 431 injected turns and cut the sweep from 25 candidates in 16
+  clusters to 6 real moments in 5 clusters.
 
 ### Changed
 
@@ -13,9 +32,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now a specified decision document — approval table first, markdown tables only,
   self-contained rows, methodology demoted to one line + digest pointer, decision tracks
   numbered. Learned from the first real sweep, whose report buried the decision mid-page.
-- **Known limits** document the three miner defects observed in that sweep, tracked as
-  issues #1 (alphabetical file cap), #2 (resumed sessions forge the repetition bonus) and
-  #3 (self-mining of injected skill text), with agent-side mitigations until they are fixed.
+- Bootstrap adapter notes describe the new scanner behaviour (newest-first ordering,
+  injected-turn skipping, resumed-session dedupe); the interim known-limit entries for the
+  three defects are gone. Miner `__version__` is 1.1.0.
 
 ## [0.1.1] - 2026-08-31
 
@@ -122,5 +141,6 @@ Initial release.
 - **Documentation** — README, [design rationale](docs/design.md), and
   [contribution guide](CONTRIBUTING.md).
 
+[0.1.2]: https://github.com/ThingsLikeClaude/ani/releases/tag/v0.1.2
 [0.1.1]: https://github.com/ThingsLikeClaude/ani/releases/tag/v0.1.1
 [0.1.0]: https://github.com/ThingsLikeClaude/ani/releases/tag/v0.1.0

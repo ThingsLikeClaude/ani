@@ -29,7 +29,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 # --------------------------------------------------------------------------
 # Phrase hints
@@ -127,6 +127,22 @@ MAX_MOMENTS = 5000                  # correction moments retained across the swe
 SKIP_ENTRY_TYPES = {
     "system", "summary", "progress", "file-history-snapshot", "attachment",
 }
+
+# User-role turns the *harness* wrote, not the human: slash-command expansions
+# (which embed whole skill documents — ani's own trigger list included),
+# task notifications, and compaction preambles. Mining them produces
+# self-pollution false positives (issue #3), so they are skipped and counted.
+INJECTED_MARKERS = (
+    "<command-name>",
+    "<command-message>",
+    "Base directory for this skill:",
+    "<task-notification",
+    "This session is being continued from a previous conversation",
+)
+
+
+def is_machine_injected(text: str) -> bool:
+    return any(marker in text for marker in INJECTED_MARKERS)
 
 
 # --------------------------------------------------------------------------
@@ -366,6 +382,10 @@ def scan_file(path: Path, cutoff, stats: dict, budget: dict) -> list:
                 stats["non_prose_skipped"] += 1
                 continue
 
+            if role == "user" and is_machine_injected(text):
+                stats["injected_skipped"] += 1
+                continue
+
             timestamp = parse_timestamp(entry.get("timestamp"))
             if cutoff is not None and timestamp is not None and timestamp < cutoff:
                 stats["out_of_window"] += 1
@@ -381,12 +401,14 @@ def scan_file(path: Path, cutoff, stats: dict, budget: dict) -> list:
                 stats["messages_over_cap"] += 1
                 continue
 
+            uuid = entry.get("uuid")
             messages.append(
                 {
                     "lineno": lineno,
                     "role": role,
                     "text": text,
                     "timestamp": timestamp,
+                    "uuid": uuid if isinstance(uuid, str) else "",
                 }
             )
             kept_here += 1
@@ -452,6 +474,7 @@ def collect_moments(session_id: str, messages: list) -> list:
         moments.append(
             {
                 "session": session_id,
+                "uuid": message.get("uuid", ""),
                 "lineno": message["lineno"],
                 "timestamp": timestamp.isoformat() if timestamp else "",
                 "sort_key": timestamp or datetime.min.replace(tzinfo=timezone.utc),
@@ -608,6 +631,12 @@ def render_digest(clusters, moments, stats, args, cutoff) -> str:
     add("- Non-prose entries skipped: %d" % stats["non_prose_skipped"])
     add("- Sidechain entries skipped: %d" % stats["sidechain_skipped"])
     add("- Entries outside window: %d" % stats["out_of_window"])
+    add("- Files skipped outside window: %d (file mtime older than the --days cutoff)"
+        % stats["files_out_of_window"])
+    add("- Machine-injected user turns skipped: %d (command expansions, task "
+        "notifications, compaction preambles)" % stats["injected_skipped"])
+    add("- Duplicate moments removed: %d (same moment mirrored across "
+        "resumed-session transcripts)" % stats["duplicate_moments"])
     add("- Unreadable files skipped: %d" % stats["unreadable_files"])
     add("- Oversized lines skipped: %d (cap %d bytes per line)"
         % (stats["oversized_lines"], MAX_LINE_BYTES))
@@ -703,13 +732,25 @@ def render_digest(clusters, moments, stats, args, cutoff) -> str:
 # --------------------------------------------------------------------------
 # Driver
 # --------------------------------------------------------------------------
-def iter_transcripts(projects_dir: Path, project_filter):
+def iter_transcripts(projects_dir: Path, project_filter, cutoff=None, stats=None):
+    """Yield (slug, path) newest-first by file mtime.
+
+    Ordering is load-bearing because of MAX_FILES: the cap must trim the
+    *oldest* history, never an alphabetical tail — one huge directory early in
+    the alphabet used to starve every project after it (issue #1).
+
+    With a ``cutoff``, files last modified before it are skipped outright and
+    counted: every entry in such a file was written before the window opens,
+    so opening it buys nothing. mtime is advisory; entry timestamps stay the
+    authoritative in-window filter inside ``scan_file``.
+    """
     if not projects_dir.is_dir():
         return
     try:
         slugs = sorted(p for p in projects_dir.iterdir() if p.is_dir())
     except OSError:                                          # pragma: no cover
         return
+    candidates = []
     for slug_dir in slugs:
         if project_filter and project_filter not in slug_dir.name:
             continue
@@ -718,7 +759,20 @@ def iter_transcripts(projects_dir: Path, project_filter):
         except OSError:                                      # pragma: no cover
             continue
         for path in files:
-            yield slug_dir.name, path
+            try:
+                mtime = path.stat().st_mtime
+            except OSError:                                  # pragma: no cover
+                mtime = 0.0
+            if cutoff is not None and mtime:
+                modified = datetime.fromtimestamp(mtime, timezone.utc)
+                if modified < cutoff:
+                    if stats is not None:
+                        stats["files_out_of_window"] += 1
+                    continue
+            candidates.append((mtime, slug_dir.name, path))
+    candidates.sort(key=lambda item: (-item[0], item[1], item[2].name))
+    for _, slug, path in candidates:
+        yield slug, path
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -770,6 +824,9 @@ def main(argv=None) -> int:
         "non_prose_skipped": 0,
         "sidechain_skipped": 0,
         "out_of_window": 0,
+        "files_out_of_window": 0,
+        "injected_skipped": 0,
+        "duplicate_moments": 0,
         "unreadable_files": 0,
         "oversized_lines": 0,
         "files_over_cap": 0,
@@ -780,7 +837,7 @@ def main(argv=None) -> int:
     budget = {"messages": 0}
 
     moments = []
-    for slug, path in iter_transcripts(projects_dir, args.project):
+    for slug, path in iter_transcripts(projects_dir, args.project, cutoff, stats):
         if stats["files"] >= MAX_FILES:
             stats["files_over_cap"] += 1
             continue
@@ -795,6 +852,30 @@ def main(argv=None) -> int:
         moments.extend(found)
 
     moments.sort(key=lambda m: (m["sort_key"], m["session"], m["lineno"]))
+
+    # A session resumed under another project slug mirrors its transcript
+    # prefix byte-for-byte, so the same moment mines once per slug and would
+    # forge the +2 repetition bonus (issue #2). Entry uuids identify the
+    # original moment; without a uuid, identical timestamp+lineno+quote is the
+    # resumed-session signature. Moments with neither uuid nor timestamp are
+    # never deduplicated — too little signal to merge safely.
+    deduped = []
+    seen = set()
+    for moment in moments:
+        if moment["uuid"]:
+            key = ("uuid", moment["uuid"])
+        elif moment["timestamp"]:
+            key = ("pos", moment["timestamp"], moment["lineno"], moment["quote"])
+        else:
+            deduped.append(moment)
+            continue
+        if key in seen:
+            stats["duplicate_moments"] += 1
+            continue
+        seen.add(key)
+        deduped.append(moment)
+    moments = deduped
+
     clusters = cluster_moments(moments)
     digest = render_digest(clusters, moments, stats, args, cutoff)
 
