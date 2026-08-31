@@ -2,7 +2,7 @@
 
 English · **[한국어](design.ko.md)**
 
-This is the reasoning behind the protocol. [README.md](../README.md) shows what ani does and
+This is the reasoning behind the protocol. [README.en.md](../README.en.md) shows what ani does and
 what it writes; this document explains why each rule is the way it is, for a reader who has
 never seen the project before.
 
