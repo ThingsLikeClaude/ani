@@ -5,6 +5,32 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2026-08-31
+
+Two defects found by the first post-update verification session (issues #4, #5).
+
+### Fixed
+
+- **`/ani doctor` no longer reports an orphaned plugin cache** (#4). After a plugin
+  update the old version directory stays in the cache with an `.orphaned_at` marker, and
+  `find_installed_plugin()` returned the first manifest in walk order — alphabetically the
+  stale one. It now ranks every match: live (no `.orphaned_at`) beats orphaned, then the
+  numerically highest version wins, and a found orphan still beats "not found". The OK line
+  now also names the winning version (`... (version 0.1.3)`), sourced from the manifest and
+  sanitised before echoing. On the real cache that produced the report, the doctor moved
+  from `found at .../0.1.0` to `found at .../0.1.2 (version 0.1.2)`.
+
+### Changed
+
+- **Docs: the install root is resolved, not guessed** (#5). The v0.1.1 "two directories
+  above SKILL.md" wording still let a session run a bare relative
+  `python scripts/ani_doctor.py` into `[Errno 2]`. SKILL.md References now carries the
+  recipe — take the harness's `Base directory for this skill:` line, strip the trailing
+  `skills/ani`, run by absolute path — and names the concrete cache shape
+  `~/.claude/plugins/cache/<marketplace>/ani/<version>/` (`${CLAUDE_PLUGIN_ROOT}` in hook
+  context). The doctor subcommand row and `adapters/claude-code.md` point at the same
+  recipe.
+
 ## [0.1.2] - 2026-08-31
 
 The three miner defects found by the first real-world sweep, fixed (issues #1, #2, #3).
@@ -141,6 +167,7 @@ Initial release.
 - **Documentation** — README, [design rationale](docs/design.md), and
   [contribution guide](CONTRIBUTING.md).
 
+[0.1.3]: https://github.com/ThingsLikeClaude/ani/releases/tag/v0.1.3
 [0.1.2]: https://github.com/ThingsLikeClaude/ani/releases/tag/v0.1.2
 [0.1.1]: https://github.com/ThingsLikeClaude/ani/releases/tag/v0.1.1
 [0.1.0]: https://github.com/ThingsLikeClaude/ani/releases/tag/v0.1.0

@@ -58,6 +58,14 @@ MAX_SCAN_DEPTH = 6
 MAX_SCAN_DIRS = 4000
 MAX_MANIFEST_BYTES = 64 * 1024
 MAX_DETAIL_PATH = 160
+# The plugin manager marks a superseded version directory with this file
+# (the live one may carry .in_use, but the old one can carry both markers,
+# so absence-of-orphan is the only reliable liveness signal).
+ORPHAN_MARKER = ".orphaned_at"
+MAX_VERSION_CHARS = 32
+VERSION_ALPHABET = frozenset(
+    "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ._-"
+)
 
 NOTE_LINE = (
     "NOTE hook firing cannot be verified from here - open a fresh session "
@@ -368,23 +376,62 @@ def _manifest_names(directory):
     )
 
 
-def _is_ani_manifest(path):
+def _ani_manifest_version(path):
+    """The manifest's version if ``path`` is an ani plugin.json, else None.
+
+    The manifest is untrusted input: a version that is not a plain dotted
+    token (or is unreasonably long) is reduced to ``""`` so it can never ride
+    into a report line.
+    """
     try:
         if os.path.getsize(path) > MAX_MANIFEST_BYTES:
-            return False
+            return None
         with open(path, "r", encoding="utf-8-sig", errors="replace") as handle:
             data = json.loads(handle.read(MAX_MANIFEST_BYTES))
     except Exception:
-        return False
-    return isinstance(data, dict) and data.get("name") == PLUGIN_NAME
+        return None
+    if not isinstance(data, dict) or data.get("name") != PLUGIN_NAME:
+        return None
+    version = data.get("version")
+    if (
+        isinstance(version, str)
+        and 0 < len(version) <= MAX_VERSION_CHARS
+        and all(ch in VERSION_ALPHABET for ch in version)
+    ):
+        return version
+    return ""
+
+
+def _version_key(version):
+    """Dotted version as a comparable tuple; junk pieces sort lowest."""
+    parts = []
+    for piece in version.split("."):
+        digits = ""
+        for ch in piece:
+            if ch.isdigit():
+                digits += ch
+            else:
+                break
+        parts.append(int(digits) if digits else -1)
+    return tuple(parts)
 
 
 def find_installed_plugin(root):
-    """The directory of an installed ``ani`` plugin under ``root``, or None."""
+    """The best installed ``ani`` plugin under ``root`` as ``(dir, version)``.
+
+    A plugin update leaves the old version directory in the cache with an
+    ``.orphaned_at`` marker, and the walk's alphabetical order used to hand
+    the report to that orphan. Ranking: any live directory beats any orphaned
+    one, then the numerically highest version wins. A found orphan still
+    beats returning None - a stale cache is closer to the truth than "no
+    plugin". Returns None when nothing manifest-shaped exists.
+    """
     if not os.path.isdir(root):
         return None
     root_depth = root.rstrip(os.sep).count(os.sep)
     visited = 0
+    best = None
+    best_rank = None
     for current, subdirs, _files in os.walk(root):
         visited += 1
         if visited > MAX_SCAN_DIRS:
@@ -392,17 +439,35 @@ def find_installed_plugin(root):
         if current.count(os.sep) - root_depth >= MAX_SCAN_DEPTH:
             del subdirs[:]
             continue
+        if os.path.basename(current) == ".claude-plugin":
+            # Its parent already matched this manifest; matching it again
+            # here would look "live" because the orphan marker sits in the
+            # parent, not in .claude-plugin.
+            continue
         for manifest in _manifest_names(current):
-            if os.path.isfile(manifest) and _is_ani_manifest(manifest):
-                return current
-    return None
+            if not os.path.isfile(manifest):
+                continue
+            version = _ani_manifest_version(manifest)
+            if version is None:
+                continue
+            live = not os.path.exists(os.path.join(current, ORPHAN_MARKER))
+            rank = (live, _version_key(version))
+            if best_rank is None or rank > best_rank:
+                best = (current, version)
+                best_rank = rank
+            break
+    return best
 
 
 def check_hook_install(report):
     root = os.path.abspath(os.path.expanduser(PLUGIN_ROOT))
     found = find_installed_plugin(root)
     if found:
-        report.line(OK, "hook install", "ani plugin found at " + _short(found))
+        directory, version = found
+        detail = "ani plugin found at " + _short(directory)
+        if version:
+            detail += " (version {0})".format(version)
+        report.line(OK, "hook install", detail)
     else:
         report.line(
             WARN,

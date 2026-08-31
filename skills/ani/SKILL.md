@@ -312,7 +312,7 @@ plain `/ani`.
 | `/ani ok <S-id>` | Promote a `provisional` S to `active` |
 | `/ani resolve <F-id>` | Spend a dedicated run on one unresolved F: reproduce, resolve, verify, compile. The **only** licence to work a failure outside live work |
 | `/ani bootstrap [--days N]` | Mine past sessions for corrections, cluster them, and present a digest for bulk approval — see `references/adapters/bootstrap.md` |
-| `/ani doctor` | Run `scripts/ani_doctor.py` from the **install root** (Bash; the root is two directories above this SKILL.md — see References): python, store resolution and write probe, INDEX parse counts, knowledge sources, plugin install. Prints `OK`/`WARN`/`FAIL` per check; exit `0` clean, `1` warnings, `2` failures. It cannot see whether hooks fire — only `[ani-index v1]` in a fresh session shows that |
+| `/ani doctor` | Run `scripts/ani_doctor.py` at the **install root** by **absolute path** (Bash; resolve the root first — References, "Resolving the install root"): python, store resolution and write probe, INDEX parse counts, knowledge sources, plugin install. Prints `OK`/`WARN`/`FAIL` per check; exit `0` clean, `1` warnings, `2` failures. It cannot see whether hooks fire — only `[ani-index v1]` in a fresh session shows that |
 
 ## Red flags — stop and correct course
 
@@ -336,9 +336,21 @@ plain `/ani`.
 Everything under `references/` sits beside this SKILL.md. `scripts/` and
 `templates/` do **not**: they live at the **install root**, two directories
 above this file — the plugin root in a plugin install (the cached plugin
-directory), the repo root in a checkout. A skill-directory-only install
-carries neither: build F/S files from `references/schemas.md` and skip
-`/ani doctor` — the protocol is complete without them.
+directory), the repo root in a checkout.
+
+**Resolving the install root** — resolve it, never guess it, and never run a
+bare relative `python scripts/ani_doctor.py` from the working directory (that
+is the known `[Errno 2] No such file` failure). The harness prints
+`Base directory for this skill: <path>` when this skill loads; strip the
+trailing `skills/ani` and what remains is the install root. In a plugin
+install it looks like `~/.claude/plugins/cache/<marketplace>/ani/<version>/`
+— the same directory the hooks receive as `${CLAUDE_PLUGIN_ROOT}` — so the
+doctor is always the absolute
+`python <install root>/scripts/ani_doctor.py`.
+
+A skill-directory-only install carries neither `scripts/` nor `templates/`:
+build F/S files from `references/schemas.md` and skip `/ani doctor` — the
+protocol is complete without them.
 
 - `references/schemas.md` — canonical F/S/INDEX/config field spec + worked example.
 - `references/triggers.md` — multilingual phrase hints, extendable per project.

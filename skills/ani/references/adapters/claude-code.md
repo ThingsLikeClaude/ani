@@ -294,10 +294,13 @@ For a local checkout:
 `${CLAUDE_PLUGIN_ROOT}` is resolved by Claude Code, so no paths need editing.
 Verify with `/hooks` — both `UserPromptSubmit` and `SessionStart` should list an
 ani command — and confirm the skill is loadable with `/skills`. Finish with the
-self-check, `python scripts/ani_doctor.py` run from the plugin root — the
-cached plugin directory, two levels above the skill's SKILL.md (the skill runs
-it as `/ani doctor`),
-and keep going until it reports all green; it cannot verify hook firing itself,
+self-check: `python "${CLAUDE_PLUGIN_ROOT}/scripts/ani_doctor.py"` in hook
+context, or by absolute path
+`~/.claude/plugins/cache/<marketplace>/ani/<version>/scripts/ani_doctor.py` —
+the cached plugin directory, two levels above the skill's SKILL.md (the skill
+runs it as `/ani doctor`; a bare relative `scripts/ani_doctor.py` from the
+working directory is the known `[Errno 2]` failure).
+Keep going until it reports all green; it cannot verify hook firing itself,
 so the last word is a fresh session showing `[ani-index v1]`.
 
 **Command names.** This document writes `/ani` as the protocol's short form.
