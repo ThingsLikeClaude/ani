@@ -71,14 +71,23 @@ Store rank dominates; inside a store, `active` outranks `provisional`. One id in
 both stores is one pattern: the project copy wins and the global one is ignored.
 An S id is a slug, so two people who learn the same lesson land on the same id —
 the override is common, not exotic. The session-start injection therefore **names**
-the ids it shadowed; when you apply one of them, say that the project copy is the
-one in force and that a global pattern of the same id exists, so the user can look.
+the ids it shadowed; step 6b covers what to say when you apply one.
 
 5. Skip any S whose status is `review-needed` or `retired` — they are excluded
    from search so a wrong manual cannot be re-applied.
 6. A `provisional` S **must be disclosed on every application**, with its ID:
    "Applying provisional pattern `S-dark-mode-tokens` (auto-compiled, not yet
    human-approved) — tell me if it is wrong." The user can veto at any time.
+6b. An S from the **project overlay** is disclosed once per id per session when
+   either is true: the session-start injection named it as shadowing a global
+   pattern of the same id, or its file was last written by someone else
+   (`git log -1 --format=%ae -- <path>` against `git config user.email`).
+   "Applying `S-commit-style` from the project overlay (written by a teammate;
+   your global store has a pattern under the same id) — tell me if it is wrong."
+   Drop whichever half is false. This **does not block**: say it and carry on,
+   the same way the handshake notice is said once and then never again that
+   session. No git, no configured email, or an untracked file → evaluate the
+   shadowing half alone and never guess at authorship.
 7. Whenever a pattern shaped your action, cite its ID in your reply.
 
 **Knowledge sources (optional).** With `knowledge_sources` set in config.md, a
