@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **A pattern overridden by the project overlay no longer vanishes without trace**
+  (#11). An S id is a slug, not a random string, so two people who learn the same lesson
+  land on the same id — `S-commit-style` is what anyone would call it. The overlay's row
+  wins, which is the matching priority in `schemas.md` working as specified, but the
+  loser was dropped silently: the reader could not tell their own pattern had been
+  overridden, let alone go read it. The session-start injection now names the shadowed
+  ids on one budget-guarded line, capped at five plus a count. Resolution is unchanged —
+  only the silence is. With nothing shadowed the line costs nothing, and a full budget
+  still spends itself on patterns rather than on talking about them.
+
 ## [0.2.1] - 2026-09-01
 
 ### Fixed

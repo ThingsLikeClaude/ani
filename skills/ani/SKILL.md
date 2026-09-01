@@ -69,6 +69,10 @@ overlay only when the user asks for it. Never write outside a store. Fields:
 
 Store rank dominates; inside a store, `active` outranks `provisional`. One id in
 both stores is one pattern: the project copy wins and the global one is ignored.
+An S id is a slug, so two people who learn the same lesson land on the same id —
+the override is common, not exotic. The session-start injection therefore **names**
+the ids it shadowed; when you apply one of them, say that the project copy is the
+one in force and that a global pattern of the same id exists, so the user can look.
 
 5. Skip any S whose status is `review-needed` or `retired` — they are excluded
    from search so a wrong manual cannot be re-applied.
