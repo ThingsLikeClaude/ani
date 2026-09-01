@@ -229,12 +229,18 @@ class DigestTests(CandidateTestCase):
         self.write_s(store, "S-alpha")
         self.write_s(store, "S-beta", froms="F-20260828-bbbbbbbb", keywords="hooks")
         root = self.make_repo("https://github.com/acme/widgets.git")
+        hooks_dir = os.path.join(root, "hooks")
+        os.makedirs(hooks_dir)
+        with open(os.path.join(hooks_dir, "trigger.py"), "w", encoding="utf-8") as fh:
+            fh.write("x\n")
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
         code, out, err = self.run_script("--repo", root, "--global-store", store)
         self.assertEqual(code, 0, err)
         self.assertIn("captured in this repo", out)
         self.assertIn("keyword overlap", out)
         self.assertIn("a guess", out)
         self.assertIn("S-alpha", out)
+        self.assertIn("S-beta", out)
 
     def test_the_digest_says_nothing_was_written(self):
         store = self.make_store()
@@ -249,6 +255,19 @@ class DigestTests(CandidateTestCase):
                                          "--global-store", os.path.join(root, "nope"))
         self.assertEqual(code, 0, err)
         self.assertEqual(err, "")
+
+    def test_a_group_a_id_already_in_the_overlay_shows_the_skip_note(self):
+        store = self.make_store()
+        self.write_f(store, "F-20260828-aaaaaaaa", project="acme/widgets")
+        self.write_s(store, "S-alpha")
+        root = self.make_repo("https://github.com/acme/widgets.git")
+        overlay = os.path.join(root, ".ani", "patterns")
+        os.makedirs(overlay)
+        with open(os.path.join(overlay, "S-alpha.md"), "w", encoding="utf-8") as fh:
+            fh.write("---\nid: S-alpha\n---\n")
+        code, out, err = self.run_script("--repo", root, "--global-store", store)
+        self.assertEqual(code, 0, err)
+        self.assertIn("yes — will be skipped", out)
 
 
 if __name__ == "__main__":
