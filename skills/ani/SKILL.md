@@ -178,6 +178,10 @@ do one thing, fix.
   the install root (see References; no templates present → build the file from
   `references/schemas.md`) — the random 8-char suffix is what makes concurrent
   sessions collision-free.
+- Capturing inside a repo? Fill `project` by the slug rule: `owner/repo` from the
+  `origin` remote when there is one, else the repo root's directory name; omit
+  rather than guess. This is the field `/ani git` later reads as provenance, and
+  it never repairs retroactively — whatever is written now is what that F carries.
 - Does this correction match an already-captured F class (INDEX keywords)?
   Increment that F's `recurrence` instead of opening a duplicate class.
 - `## Excerpt` is REQUIRED and must be a **self-contained verbatim** exchange:

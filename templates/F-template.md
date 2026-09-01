@@ -5,7 +5,9 @@
 id: F-YYYYMMDD-rand8er        # must equal the filename without .md
 status: captured              # captured | compiled | archived
 date: YYYY-MM-DD              # from the `date` command, never from memory
-project: <project-slug>       # optional — omit rather than guess
+project: <owner/repo>         # optional — `owner/repo` from the `origin` remote when
+                              # there is one, else the repo root's directory name;
+                              # omit rather than guess
 session: <harness-session-ref>  # optional — the Excerpt must stand alone without it
 trigger_quote: "<the user's correction, verbatim, in their language>"
 keywords: [<domain>, <artifact>, <situation>]   # 3-6 lowercase tokens

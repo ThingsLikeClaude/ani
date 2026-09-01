@@ -123,6 +123,14 @@ from may be deleted tomorrow. Set `recurrence` to the cluster's member count min
 sweep already measured how often each class came back, which is exactly what orders the
 unresolved queue (`schemas.md` §3).
 
+When the cluster came from work inside a repo, fill `project` by the slug rule: `owner/repo`
+from the `origin` remote when there is one, else the repo root's directory name; omit rather
+than guess. **The harness project slug this sweep already knows is not a repo slug** — the
+path-mangled form (`D--00-PROJECTS-ani`, whatever `--project` filtered on) names a transcript
+directory, not a repository, and must never be written into `project`. It is the tempting
+wrong value here, because it is the one already in hand. No repo, or no confident slug: leave
+the field out. `/ani git` reads this field as provenance and it never repairs retroactively.
+
 **Step 5 — Draft provisional S files for clusters reaching `E >= T`.** Per
 `references/schemas.md` §2: `status: provisional`, `scope: global` to match the store they are
 written to, `compiled_from` pointing at the F from step 4, `summary` in use-when form. Every
