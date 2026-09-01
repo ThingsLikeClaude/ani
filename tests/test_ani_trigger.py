@@ -715,20 +715,19 @@ class GlobalStoreIsNotAProjectOverlayTests(HookTestCase):
             os.path.normcase(os.path.join(store, "INDEX.md")),
         )
 
-    def test_a_store_the_caller_stands_in_is_still_the_project_overlay(self):
-        """Configuring the global store *at* the working directory says this
-        one store serves both roles. It is physically in the tree being worked
-        on, so it stays the project overlay; only inheritance from an ancestor
-        is what the walk refuses."""
+    def test_the_global_store_is_refused_at_the_working_directory_too(self):
+        """Standing in the store's own directory does not make it a project's.
+
+        The everyday case is a session opened in the home directory, where the
+        default `~/.ani` sits at depth zero: home is not a repo and there is no
+        team, so announcing the personal store as repo-local and shared is the
+        more dangerous of the two possible mislabels. One physical store is
+        announced under one identity, and that identity is the global one.
+        """
         store, work = self.home_with_global_store()
-        overlay = os.path.join(work, ".ani")
-        os.makedirs(overlay)
-        self.write_index(overlay, INDEX_FIXTURE)
-        self.with_global_store(overlay)
-        self.assertEqual(
-            os.path.normcase(os.path.abspath(self.mod.find_index(work) or "")),
-            os.path.normcase(os.path.join(overlay, "INDEX.md")),
-        )
+        home = os.path.dirname(store)
+        self.with_global_store(store)
+        self.assertIsNone(self.mod.find_index(home))
 
     def test_a_genuine_overlay_below_home_is_still_found(self):
         store, work = self.home_with_global_store()

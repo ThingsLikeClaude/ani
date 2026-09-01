@@ -488,6 +488,15 @@ class DualStoreTests(SessionStartTestCase):
         self.assertIn("S-global-only", context)
 
     def test_a_global_store_equal_to_the_project_store_is_injected_once(self):
+        """One directory serving as both stores is announced once, as global.
+
+        The label used to be the project's, on the reasoning that a store you
+        are standing in is repo-local. A session opened in the home directory
+        showed why that is wrong: the default `~/.ani` sits at depth zero
+        there, and the personal store was announced as repo-local and shared
+        with a team that does not exist. Between the two possible mislabels
+        that is the dangerous one, so the personal identity wins.
+        """
         project = self.make_project()
         context = self.context_of(
             self.run_hook(
@@ -495,7 +504,8 @@ class DualStoreTests(SessionStartTestCase):
             )[1]
         )
         self.assertEqual(context.count("S-dark-mode-tokens"), 1, context)
-        self.assertNotIn("global store (", context)
+        self.assertIn("global store (", context)
+        self.assertNotIn("project store (", context)
 
     def test_config_global_store_key_redirects_the_global_path(self):
         project = self.make_project()
