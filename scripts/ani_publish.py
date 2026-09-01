@@ -171,3 +171,83 @@ def group_b(patterns: list, vocabulary: set, exclude_ids: set) -> list:
         if pattern["id"] not in exclude_ids
         and vocabulary & {k.lower() for k in pattern["keywords"]}
     ]
+
+
+def overlay_ids(repo_root: str) -> set:
+    directory = os.path.join(repo_root, ".ani", "patterns")
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return set()
+    return {os.path.splitext(n)[0] for n in names
+            if n.startswith("S-") and n.endswith(".md")}
+
+
+def _rows(patterns, taken, label):
+    lines = []
+    for pattern in patterns:
+        collision = "yes — will be skipped" if pattern["id"] in taken else "no"
+        lines.append("| `%s` | %s | %s | %s | %s |" % (
+            pattern["id"], pattern["summary"] or "(no summary)",
+            ", ".join(pattern["compiled_from"]) or "(none)", collision, label))
+    return lines
+
+
+def render_digest(a_rows, b_rows, taken, slug, store) -> str:
+    out = ["# ani publish candidates", "",
+           "Advisory only — **nothing was written to any store.** The agent running",
+           "`/ani git` presents these rows and writes only the ones you select, one by",
+           "one. A row is never published as a side effect of selecting another.", "",
+           "- Repo slug: `%s`" % (slug or "(unknown)"),
+           "- Global store: `%s`" % store,
+           "- Captured in this repo: %d" % len(a_rows),
+           "- Keyword overlap: %d" % len(b_rows), ""]
+    if not a_rows and not b_rows:
+        out += ["No candidates. Nothing in the global store points at this repo.", ""]
+        return "\n".join(out)
+    out += ["| id | summary | compiled from | already in overlay | group |",
+            "| --- | --- | --- | --- | --- |"]
+    out += _rows(a_rows, taken, "captured in this repo")
+    out += _rows(b_rows, taken, "keyword overlap")
+    out += ["",
+            "Rows marked **keyword overlap** are *a guess*: their source failures never",
+            "recorded which repo they came from, so the miner matched vocabulary instead.",
+            "Read them before selecting. Rows marked *captured in this repo* carry a",
+            "recorded `project` slug.", ""]
+    return "\n".join(out)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="ani_publish.py",
+        description=("List global patterns worth publishing into this repo's .ani/ "
+                     "overlay. Read-only: never writes into any store."))
+    parser.add_argument("--repo", default=os.getcwd(),
+                        help="Repo root (default: the working directory)")
+    parser.add_argument("--global-store", default=os.path.expanduser("~/.ani"),
+                        help="Global store directory (default: ~/.ani)")
+    parser.add_argument("--out", default="",
+                        help="Write the digest to FILE (UTF-8, LF) instead of stdout")
+    return parser
+
+
+def main(argv=None) -> int:
+    args = build_parser().parse_args(argv)
+    repo = os.path.abspath(os.path.expanduser(args.repo))
+    store = os.path.abspath(os.path.expanduser(args.global_store))
+    slug = repo_slug(repo)
+    patterns = global_patterns(store)
+    a_rows = group_a(patterns, store, slug)
+    b_rows = group_b(patterns, repo_vocabulary(repo), {p["id"] for p in a_rows})
+    digest = render_digest(a_rows, b_rows, overlay_ids(repo), slug, store)
+    if args.out:
+        with open(args.out, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(digest)
+    else:
+        sys.stdout.buffer.write(digest.encode("utf-8"))
+        sys.stdout.buffer.flush()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

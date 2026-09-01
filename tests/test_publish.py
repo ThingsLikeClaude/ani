@@ -204,5 +204,52 @@ class GroupBTests(CandidateTestCase):
         self.assertEqual(self.mod.group_b(patterns, {"hooks"}, set()), [])
 
 
+class DigestTests(CandidateTestCase):
+
+    def run_script(self, *args):
+        completed = subprocess.run(
+            [sys.executable, str(SCRIPT)] + list(args),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        return (completed.returncode,
+                completed.stdout.decode("utf-8"),
+                completed.stderr.decode("utf-8"))
+
+    def test_an_id_already_in_the_overlay_is_flagged(self):
+        root = self.make_repo("https://github.com/acme/widgets.git")
+        overlay = os.path.join(root, ".ani", "patterns")
+        os.makedirs(overlay)
+        with open(os.path.join(overlay, "S-alpha.md"), "w", encoding="utf-8") as fh:
+            fh.write("---\nid: S-alpha\n---\n")
+        self.assertEqual(self.mod.overlay_ids(root), {"S-alpha"})
+
+    def test_the_digest_names_both_groups_and_says_group_b_is_a_guess(self):
+        store = self.make_store()
+        self.write_f(store, "F-20260828-aaaaaaaa", project="acme/widgets")
+        self.write_s(store, "S-alpha")
+        self.write_s(store, "S-beta", froms="F-20260828-bbbbbbbb", keywords="hooks")
+        root = self.make_repo("https://github.com/acme/widgets.git")
+        code, out, err = self.run_script("--repo", root, "--global-store", store)
+        self.assertEqual(code, 0, err)
+        self.assertIn("captured in this repo", out)
+        self.assertIn("keyword overlap", out)
+        self.assertIn("a guess", out)
+        self.assertIn("S-alpha", out)
+
+    def test_the_digest_says_nothing_was_written(self):
+        store = self.make_store()
+        root = self.make_repo("https://github.com/acme/widgets.git")
+        code, out, _ = self.run_script("--repo", root, "--global-store", store)
+        self.assertEqual(code, 0)
+        self.assertIn("nothing was written", out.lower())
+
+    def test_a_missing_store_exits_zero(self):
+        root = self.make_repo("https://github.com/acme/widgets.git")
+        code, out, err = self.run_script("--repo", root,
+                                         "--global-store", os.path.join(root, "nope"))
+        self.assertEqual(code, 0, err)
+        self.assertEqual(err, "")
+
+
 if __name__ == "__main__":
     unittest.main()
