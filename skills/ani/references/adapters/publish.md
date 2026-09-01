@@ -98,8 +98,16 @@ paraphrased away:
   the two-group split exists precisely so a guess is never shown as if it were
   provenance.
 
+Patterns whose `status` is `review-needed` or `retired` are **not in the table at
+all**: they are excluded from search because a wrong manual cannot be re-applied
+(`references/schemas.md` §2), so publishing one would hand a team a pattern that
+was quarantined *because it was proven wrong*. The digest's `## Scan` block names
+how many were held back, which is what keeps the filter visible instead of silent.
+
 If the digest reports no candidates, say so and stop — there is nothing to
-select, and that is a normal outcome, not a broken run.
+select, and that is a normal outcome, not a broken run. Relay the digest's own
+reason, though: it distinguishes an empty result from a store directory it could
+not find, and the second one means a wrong `--global-store`, not an empty store.
 
 ---
 
@@ -128,9 +136,9 @@ For each id the user selected, in the order they named them:
    explicit instruction the user has not given.
 2. Otherwise, copy `<global-store>/patterns/<id>.md` to
    `<repo>/.ani/patterns/<id>.md` unchanged.
-3. In the copy — and only in the copy — change `scope: global` to
-   `scope: project` in the frontmatter. Touch nothing else in the file: not the
-   body, not `compiled_from`, not `keywords`. The global original at
+3. In the copy — and only in the copy — set `scope: project` in the frontmatter,
+   adding the field if the original does not carry one. Touch nothing else in the
+   file: not the body, not `compiled_from`, not `keywords`. The global original at
    `<global-store>/patterns/<id>.md` must read byte-identical to how it read
    before step 1.
 
@@ -138,6 +146,11 @@ Once every selected id has been handled, regenerate `<repo>/.ani/INDEX.md` from
 the frontmatter of everything now in `<repo>/.ani/patterns/`, honoring the
 60-row / 6KB budget (`references/schemas.md` §3). A skipped id changes nothing
 in the overlay, so it needs no INDEX update.
+
+The budget can be full. §3's drop rules usually free a slot, but not always — and
+a pattern whose row does not fit is a file nobody will ever match: it is in the
+overlay, and search never reaches it. When that happens, say so in the closing
+report, by id. "Written" is not the whole truth for a row that did not fit.
 
 ---
 

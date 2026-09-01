@@ -82,6 +82,9 @@ the ids it shadowed; step 6b covers what to say when you apply one.
    either is true: the session-start injection named it as shadowing a global
    pattern of the same id, or its file was last written by someone else
    (`git log -1 --format=%ae -- <path>` against `git config user.email`).
+   No injection to consult — manual mode, or the line dropped for budget — then
+   read the shadowing half off the two `INDEX.md` files you already opened in
+   step 1: the same id in both is a shadow.
    "Applying `S-commit-style` from the project overlay (written by a teammate;
    your global store has a pattern under the same id) — tell me if it is wrong."
    Drop whichever half is false. This **does not block**: say it and carry on,

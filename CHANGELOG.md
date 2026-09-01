@@ -28,7 +28,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   at a time; there is no "approve all", because `schemas.md` §2 forbids relocation inferred
   from a bulk approval. Selected patterns are **copied**, not moved: publishing is teaching,
   and the global original is untouched. An id already in the overlay is skipped and named,
-  never overwritten. Nothing is committed — that stays the user's to do.
+  never overwritten. Patterns quarantined as `review-needed` or `retired` are held back from
+  the digest — they are excluded from search because a wrong manual cannot be re-applied, so
+  they are not publishable either — and the digest reports how many it withheld, because a
+  filter the user cannot see is the miner deciding something. Nothing is committed — that
+  stays the user's to do.
+- **Every F now records which repo it came from, by one rule.** `project` is filled from the
+  repo slug — `owner/repo` from the `origin` remote when there is one, else the repo root's
+  directory name; omit rather than guess — wherever an F is written: the capture step, the
+  bootstrap sweep, the template, the schema. The rule previously existed only on the reading
+  side, so the provenance group `/ani git` offers filled only when an agent's ad-hoc choice
+  happened to match, and a bootstrap-seeded store could not fill it at all. The field does
+  not repair retroactively: an F carries whatever was chosen when it was written.
 - **A project pattern says where it came from.** An overlay `S` is disclosed once per id per
   session when it shadowed a global pattern of the same id, or when git shows someone else
   wrote it. It never blocks: ani's guarantee is that no automatic step beats a user veto, not

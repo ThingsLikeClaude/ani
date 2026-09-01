@@ -161,6 +161,14 @@ exists; corrections about **how you work** land in the global store, and so does
 anything ambiguous — personal knowledge leaking into a team repo is the more
 expensive mistake. Both stores are searched, project first.
 
+**`/ani git` is how a pattern crosses that boundary.** It lists the global patterns
+that look relevant to this repo — those whose source failure recorded this repo's
+slug, plus a separately labelled group matched only on keyword overlap — and
+**copies** the ones you name into `<repo>/.ani/`. Copies, so your global original is
+untouched; one row at a time, because there is no "approve all"; an id already in the
+overlay is skipped and named rather than overwritten. Nothing is committed — that
+stays yours ([`adapters/publish.md`](skills/ani/references/adapters/publish.md)).
+
 A real incident: the user asked for a **background** change in dark mode; the agent changed the
 **text** color, inside a component instead of the tokens.
 
