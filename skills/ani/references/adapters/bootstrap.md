@@ -279,6 +279,9 @@ Two things the *agent* must respect, since the digest lands in context and then 
   project, round-robin across projects, so no single machine-written directory can spend the
   whole budget. Whatever the cap trims is each project's old tail; raise `--max-files` when
   the digest reports a cap firing.
+- **Bootstrap fills the global store, never a repo's.** Publishing a pattern to a repo
+  overlay is `/ani git` (`adapters/publish.md`), a separate decision the user makes per
+  pattern.
 
 ---
 

@@ -19,6 +19,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   only the silence is. With nothing shadowed the line costs nothing, and a full budget
   still spends itself on patterns rather than on talking about them.
 
+### Added
+
+- **`/ani git` publishes selected patterns into the repo overlay.** A stdlib miner
+  (`scripts/ani_publish.py`) lists global patterns worth sharing with this repo — those
+  whose source failures recorded this repo's slug, plus a second, separately labelled group
+  matched only on keyword overlap with the repo's own vocabulary. The user selects rows one
+  at a time; there is no "approve all", because `schemas.md` §2 forbids relocation inferred
+  from a bulk approval. Selected patterns are **copied**, not moved: publishing is teaching,
+  and the global original is untouched. An id already in the overlay is skipped and named,
+  never overwritten. Nothing is committed — that stays the user's to do.
+- **A project pattern says where it came from.** An overlay `S` is disclosed once per id per
+  session when it shadowed a global pattern of the same id, or when git shows someone else
+  wrote it. It never blocks: ani's guarantee is that no automatic step beats a user veto, not
+  that every step asks first.
+
 ## [0.2.1] - 2026-09-01
 
 ### Fixed
