@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-09-01
+
+### Fixed
+
+- **A session opened in the home directory announced the personal store as the team's**
+  (#10). The v0.2.0 fix for #9 ended the parent walk at the global store but made an
+  exception for the starting directory, on the reasoning that a store you are standing in
+  is physically in the tree being worked on, so repo-local is the safety-relevant truth
+  about it. Home is the case that breaks it: the default store sits at depth zero there,
+  home is no repo and has no team, and the injected header read
+  `project store (<home>/.ani) — repo-local, shared with the team`. Between the two
+  possible mislabels that is the dangerous one — it invites personal patterns to be read
+  as team knowledge. The exception is gone: one directory serving as both stores is
+  announced once, under the personal identity it has, and the per-row `scope` column
+  carries the rest. Only the label was ever wrong; `scope` was correct throughout.
+
 ## [0.2.0] - 2026-09-01
 
 The first real bootstrap sweep, run against a 14,504-file transcript store, turned up three
@@ -239,6 +255,7 @@ Initial release.
 - **Documentation** — README, [design rationale](docs/design.md), and
   [contribution guide](CONTRIBUTING.md).
 
+[0.2.1]: https://github.com/ThingsLikeClaude/ani/releases/tag/v0.2.1
 [0.2.0]: https://github.com/ThingsLikeClaude/ani/releases/tag/v0.2.0
 [0.1.3]: https://github.com/ThingsLikeClaude/ani/releases/tag/v0.1.3
 [0.1.2]: https://github.com/ThingsLikeClaude/ani/releases/tag/v0.1.2

@@ -231,22 +231,21 @@ def find_index(project_dir: str):
     default, which sits in the parent walk of every folder under home, so a
     session started in one of them used to have the user's personal store
     claimed as the project's — announced as repo-local and shared with a team,
-    and matched at project priority, for a repo that does not exist. Reaching
-    it *by climbing* ends the walk and answers "no project overlay";
-    ``find_global_index`` then offers it under its own name.
+    and matched at project priority, for a repo that does not exist. Meeting it
+    ends the walk and answers "no project overlay"; ``find_global_index`` then
+    offers it under its own name.
 
     Ending the walk is the point, not merely skipping the directory. Climbing
     past the global store would let an unrelated ancestor — another checkout,
     another user's tree — supply the overlay for a directory that has none,
     which is a worse misattribution than the one being fixed.
 
-    The starting directory is the exception. A store the caller is standing in
-    is this directory's overlay whatever else it is configured to be: it is
-    physically in the tree being worked on, so "repo-local, shared with the
-    team" is the safety-relevant truth about it, and `find_global_index`'s
-    `_same_path` guard already keeps it from being announced twice. What the
-    fix removes is *inheritance* of a store from an ancestor, not a store that
-    is right here.
+    Standing *in* the store's directory is not an exception to this. A session
+    opened in the home directory puts the default ``~/.ani`` at depth zero, and
+    home is not a repo and has no team, so the "it is physically in the tree
+    being worked on" argument for calling it the overlay does not hold there.
+    When one directory is both stores, it is announced once, under the personal
+    identity it actually has; the per-row ``scope`` column carries the rest.
 
     Resolution here is env-then-default, without the project config: the config
     that could redirect ``global_store`` lives inside the overlay this function
@@ -258,11 +257,11 @@ def find_index(project_dir: str):
     except Exception:
         return None
     global_store = global_store_dir()
-    for depth in range(MAX_PARENT_LEVELS + 1):
+    for _ in range(MAX_PARENT_LEVELS + 1):
         store = os.path.join(current, ".ani")
         candidate = os.path.join(store, "INDEX.md")
         if os.path.isfile(candidate):
-            if depth and _same_path(store, global_store):
+            if _same_path(store, global_store):
                 return None
             return candidate
         parent = os.path.dirname(current)
