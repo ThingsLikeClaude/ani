@@ -154,20 +154,35 @@ BIG_INDEX_FIXTURE = _big_index()
 class SessionStartTestCase(unittest.TestCase):
     """Base: every run happens inside isolated dirs with no ambient store.
 
-    ``ANI_GLOBAL_STORE`` is pointed at an empty temp directory for every run, so
-    no test can read the real ``~/.ani``. Tests that want a global store pass
-    one explicitly.
+    Both halves of the lookup are sandboxed, because either one can reach the
+    developer's own store. ``ANI_GLOBAL_STORE`` is pointed at an empty temp
+    directory for every run, and every directory handed to the hook as a
+    project dir is nested below the parent walk's reach — otherwise the "no
+    store" cases quietly become "the real ``~/.ani``" cases. Tests that want a
+    store pass one explicitly.
     """
 
     def setUp(self):
-        self.empty_dir = tempfile.mkdtemp(prefix="ani-ss-empty-")
-        self.addCleanup(shutil.rmtree, self.empty_dir, True)
+        self.empty_dir = self.make_deep_dir("ani-ss-empty-")
         self.no_global = tempfile.mkdtemp(prefix="ani-ss-noglobal-")
         self.addCleanup(shutil.rmtree, self.no_global, True)
 
+    def make_deep_dir(self, prefix):
+        """A temp dir nested below the hook's parent-walk reach.
+
+        ``find_index`` climbs five levels looking for ``.ani/``. A bare
+        ``mkdtemp`` on Windows sits four levels under the user's home, so a
+        real ``~/.ani`` would be inside the walk. Six extra levels put the
+        whole walk inside the sandbox. Same idiom as test_knowledge.py.
+        """
+        root = tempfile.mkdtemp(prefix=prefix)
+        self.addCleanup(shutil.rmtree, root, True)
+        deep = os.path.join(root, "a", "b", "c", "d", "e", "f")
+        os.makedirs(deep)
+        return deep
+
     def make_project(self, index_text=INDEX_FIXTURE):
-        project = tempfile.mkdtemp(prefix="ani-ss-proj-")
-        self.addCleanup(shutil.rmtree, project, True)
+        project = self.make_deep_dir("ani-ss-proj-")
         store = os.path.join(project, ".ani")
         os.makedirs(store)
         self.write_index(store, index_text)

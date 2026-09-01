@@ -5,6 +5,78 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-09-01
+
+The first real bootstrap sweep, run against a 14,504-file transcript store, turned up three
+ways the miner mistook machine text for a person correcting an agent (#6, #7, #8) — and
+reading its output turned up a fourth defect outside the miner, in how the global store is
+attributed (#9). Every number quoted below is measured on that store.
+
+### Fixed
+
+- **A correction now needs something to correct** (#6). A user turn with no agent turn
+  before it in the same session is no longer mined, and the count is reported as
+  `Corrections with no preceding agent turn skipped`. Such a turn opens a headless or
+  programmatic run, and its payload — a prompt template, a pasted diff — can carry a
+  trigger phrase. Worse, those runs repeat their template verbatim, so the noise was
+  collecting the `+2` repetition bonus that only genuine recurrence should earn. On the
+  real store this removed both multi-member clusters from the sweep: the only two
+  candidates that reached the repetition signal were an automated commit-message
+  generator invoking itself. The cost is recall, and it is documented: a real correction
+  typed as a session's very first turn is now invisible.
+
+- **The global store is no longer inherited as a project overlay** (#9). `find_index`
+  walks up to five parent levels looking for `.ani/INDEX.md`, and the global store lives at
+  `~/.ani` — inside the parent walk of every directory under home. A session started in any
+  such directory had the user's personal store announced as `project store (...) — repo-local,
+  shared with the team` and matched at project priority, for a repo that does not exist;
+  `find_global_index`'s `_same_path` guard suppressed the duplicate but not the
+  misattribution, so the store was offered *only* under the wrong name. Reaching the global
+  store by climbing now ends the walk and answers "no project overlay". A store in the
+  starting directory itself is unaffected: it is physically in the tree being worked on, so
+  repo-local remains the safety-relevant truth about it.
+
+- **A quoted trigger no longer counts as a correction** (#8). An agent that observes or
+  summarises another session relays it into its own prompt inside an envelope tag, and
+  those turns survived #6 because the *relaying* agent has turns of its own. Text inside a
+  paired envelope whose tag name carries `_` or `-` is now removed before matching, counted
+  as `Corrections only inside a quoted envelope skipped`, and excluded from cluster
+  keywords. On the real store this removed 19 moments, including the single largest cluster
+  in the whole sweep — nine members, every one of them a memory observer quoting the
+  primary session back to itself. Measured against the blunter rule of stripping every
+  paired tag, this predicate removed exactly the same moments while leaving pasted markup
+  (`<div>`) and message transports (`<channel>`, which relays the user's own words) intact.
+
+### Changed
+
+- **The file budget is shared round-robin across projects** (#7). Global newest-first
+  fixed the alphabet (#1) but not the crowd: a directory a machine writes to produces
+  files faster than a human produces conversations, so it took the newest slots and
+  starved everyone else. On the real store one observer's own session directory held
+  **46.1%** of the 2,000-file budget and **54 of 88 projects were never opened**. Files
+  are now read newest-first *within* each project and interleaved round-robin across
+  them: coverage went to **88 of 88 projects**, and the largest single-project share fell
+  to 5.3%. A cap that fires now trims each project's old tail instead of deleting whole
+  projects from the sweep.
+
+### Added
+
+- **The first capture self-checks once, before creating the store.** Creating the store is
+  the first moment python, the install root and write access are actually required rather
+  than assumed, so `/ani doctor` runs there — and its findings are acted on by *where the
+  fault lives*, the boundary that already governs every write. Inside the store (absent
+  directory, unwritable path, unparsable `INDEX.md`): fixed, and reported in one line.
+  Outside it (no python, plugin or hooks not installed): nothing is touched — the user gets
+  the command and the reason. Whether hooks fire stays unanswerable from there and is not
+  guessed at; `[ani-index v1]` in a fresh session is still the only proof. The check never
+  blocks the capture: a correction that arrived is captured even if every check fails, in
+  manual mode if it must be. A skill-directory-only install skips it, having no `scripts/`.
+
+- **`--max-files` (default 2000)** (#7). The default is not generous enough for a
+  long-lived store — 90 days of history on the store above holds 4,687 files, more than
+  twice the cap — so the ceiling is raisable from the CLI. The exhaustive sweep it enables
+  read 14,512 files and 690,124 lines in 1m51s.
+
 ## [0.1.3] - 2026-08-31
 
 Two defects found by the first post-update verification session (issues #4, #5).
@@ -167,6 +239,7 @@ Initial release.
 - **Documentation** — README, [design rationale](docs/design.md), and
   [contribution guide](CONTRIBUTING.md).
 
+[0.2.0]: https://github.com/ThingsLikeClaude/ani/releases/tag/v0.2.0
 [0.1.3]: https://github.com/ThingsLikeClaude/ani/releases/tag/v0.1.3
 [0.1.2]: https://github.com/ThingsLikeClaude/ani/releases/tag/v0.1.2
 [0.1.1]: https://github.com/ThingsLikeClaude/ani/releases/tag/v0.1.1

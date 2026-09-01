@@ -120,6 +120,22 @@ Right after install the store (`~/.ani/`) does not exist yet, so doctor shows tw
 fresh session shows **no** `[ani-index v1]` — that is normal: the heartbeat starts once there is
 a heart to record. Verify by doing, not by feeling:
 
+**On the first capture ani checks once, by itself.** Creating the store is the first moment
+Python, the install root and write access are *actually* required rather than assumed, so that
+is where the doctor runs — and what it reports is acted on by **where the fault lives**, the
+same boundary that governs every write.
+
+- **Inside the store** (absent directory, unwritable path, unparsable `INDEX.md`) — fixed for
+  you, and said in one line.
+- **Outside the store** (no Python, plugin or hooks not installed) — **nothing is touched.**
+  You get the one command to run and why it matters. Your environment stays yours.
+- **Whether hooks fire** is not the doctor's to answer, so it is not guessed at. A fresh
+  session's `[ani-index v1]` answers that.
+
+The check **never blocks the capture.** A correction that arrived is captured even if every
+check fails — in manual mode if it must be. The report goes *beside* the capture, never in
+front of it. And it happens once: the store exists after this.
+
 <img src="docs/assets/ani-selfcheck-en.svg" width="880" alt="install self-check: run /ani doctor for zero FAILs, make one correction, and if an F file appeared the ani-index v1 heartbeat shows in the next session — otherwise capture manually with /ani">
 
 ---
