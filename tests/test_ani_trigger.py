@@ -115,14 +115,26 @@ class HookTestCase(unittest.TestCase):
     """
 
     def setUp(self):
-        self.empty_dir = tempfile.mkdtemp(prefix="ani-empty-")
-        self.addCleanup(shutil.rmtree, self.empty_dir, True)
+        self.empty_dir = self.make_deep_dir("ani-empty-")
         self.no_global = tempfile.mkdtemp(prefix="ani-noglobal-")
         self.addCleanup(shutil.rmtree, self.no_global, True)
 
+    def make_deep_dir(self, prefix):
+        """A temp dir nested below the hook's parent-walk reach.
+
+        ``find_index`` climbs five levels looking for ``.ani/``. A bare
+        ``mkdtemp`` on Windows sits four levels under the user's home, so a
+        real ``~/.ani`` would be inside the walk. Six extra levels put the
+        whole walk inside the sandbox.
+        """
+        root = tempfile.mkdtemp(prefix=prefix)
+        self.addCleanup(shutil.rmtree, root, True)
+        deep = os.path.join(root, "a", "b", "c", "d", "e", "f")
+        os.makedirs(deep)
+        return deep
+
     def make_project(self, index_text=INDEX_FIXTURE):
-        project = tempfile.mkdtemp(prefix="ani-proj-")
-        self.addCleanup(shutil.rmtree, project, True)
+        project = self.make_deep_dir("ani-proj-")
         store = os.path.join(project, ".ani")
         os.makedirs(store)
         self.write_index(store, index_text)

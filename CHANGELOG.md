@@ -58,6 +58,17 @@ Found by the first real bootstrap sweep against a 14,504-file transcript store (
 
 ### Added
 
+- **The first capture self-checks once, before creating the store.** Creating the store is
+  the first moment python, the install root and write access are actually required rather
+  than assumed, so `/ani doctor` runs there — and its findings are acted on by *where the
+  fault lives*, the boundary that already governs every write. Inside the store (absent
+  directory, unwritable path, unparsable `INDEX.md`): fixed, and reported in one line.
+  Outside it (no python, plugin or hooks not installed): nothing is touched — the user gets
+  the command and the reason. Whether hooks fire stays unanswerable from there and is not
+  guessed at; `[ani-index v1]` in a fresh session is still the only proof. The check never
+  blocks the capture: a correction that arrived is captured even if every check fails, in
+  manual mode if it must be. A skill-directory-only install skips it, having no `scripts/`.
+
 - **`--max-files` (default 2000)** (#7). The default is not generous enough for a
   long-lived store — 90 days of history on the store above holds 4,687 files, more than
   twice the cap — so the ceiling is raisable from the CLI. The exhaustive sweep it enables

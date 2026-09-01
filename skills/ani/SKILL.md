@@ -138,6 +138,26 @@ do one thing, fix.
 
 ### Step 4 — CAPTURE
 
+- **First capture only — when the store does not exist yet, check once before
+  creating it.** This is the first moment python, the install root and write
+  access are actually required rather than assumed, so it is the honest place
+  to look. Run the doctor at the **install root** by **absolute path**
+  (References). No `scripts/` present (skill-directory install) → skip this
+  entirely; the protocol does not depend on it. Act on what it reports by
+  **where the fault lives** — the same boundary that governs every write:
+  - **Inside the store** (absent directory, unwritable path, unparsable
+    `INDEX.md`) — fix it yourself, then say so in one line.
+  - **Outside the store** (no python, plugin or hooks not installed) — fix
+    **nothing**. Give the user the one command to run and why it matters.
+    Never change the user's environment on their behalf.
+  - **Whether hooks fire** is not the doctor's to report and not yours to
+    infer: only `[ani-index v1]` in a fresh session shows that. Say the check
+    could not cover it rather than implying it passed.
+
+  **This check never blocks the capture.** A correction that arrived is
+  captured even if every check fails — in manual mode if it must be. The
+  report goes *beside* the capture, never in front of it, and it happens once:
+  the store exists after this, so later captures skip it.
 - Get today's date from the `date` command (or the platform equivalent). **Never
   from memory or from context.**
 - Pick the store by the routing rule above, then create
