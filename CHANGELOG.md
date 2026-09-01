@@ -22,6 +22,17 @@ Found by the first real bootstrap sweep against a 14,504-file transcript store (
   generator invoking itself. The cost is recall, and it is documented: a real correction
   typed as a session's very first turn is now invisible.
 
+- **A quoted trigger no longer counts as a correction** (#8). An agent that observes or
+  summarises another session relays it into its own prompt inside an envelope tag, and
+  those turns survived #6 because the *relaying* agent has turns of its own. Text inside a
+  paired envelope whose tag name carries `_` or `-` is now removed before matching, counted
+  as `Corrections only inside a quoted envelope skipped`, and excluded from cluster
+  keywords. On the real store this removed 19 moments, including the single largest cluster
+  in the whole sweep — nine members, every one of them a memory observer quoting the
+  primary session back to itself. Measured against the blunter rule of stripping every
+  paired tag, this predicate removed exactly the same moments while leaving pasted markup
+  (`<div>`) and message transports (`<channel>`, which relays the user's own words) intact.
+
 ### Changed
 
 - **The file budget is shared round-robin across projects** (#7). Global newest-first

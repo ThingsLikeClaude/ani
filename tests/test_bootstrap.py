@@ -218,6 +218,55 @@ class TestAgentContextRequirement(BootstrapTestCase):
         )
 
 
+class TestRelayedEnvelopes(BootstrapTestCase):
+    """A quoted trigger is a mention, not a use. An agent that relays another
+    conversation into its own prompt carries the trigger phrase with it, and it
+    passes the agent-context check because the relaying agent has turns of its
+    own — so the phrase has to be read in the speaker's own voice."""
+
+    def test_trigger_only_inside_a_relayed_envelope_is_not_a_correction(self):
+        write_transcript(self.tmp / "projects" / "observer" / "s.jsonl", [
+            make_entry("assistant", "관찰 계속하겠습니다.", iso_days_ago(1)),
+            make_entry("user",
+                       "Hello memory agent, you are continuing to observe. "
+                       "<observed_from_primary_session><user_request>"
+                       "아니 그게 아니라 배경색만 바꾸라고"
+                       "</user_request></observed_from_primary_session>",
+                       iso_days_ago(1)),
+        ])
+        digest = self.digest_of()
+        self.assertEqual(stat_value(digest, "Correction moments found"), 0)
+        self.assertEqual(
+            stat_value(digest, "Corrections only inside a quoted envelope skipped"), 1
+        )
+
+    def test_trigger_outside_the_envelope_still_counts(self):
+        write_transcript(self.tmp / "projects" / "mixed" / "s.jsonl", [
+            make_entry("assistant", "요청대로 반영했습니다.", iso_days_ago(1)),
+            make_entry("user",
+                       "아니 그게 아니라 <user_request>저 위에 인용된 거</user_request> 말고",
+                       iso_days_ago(1)),
+        ])
+        digest = self.digest_of()
+        self.assertEqual(stat_value(digest, "Correction moments found"), 1)
+        self.assertEqual(
+            stat_value(digest, "Corrections only inside a quoted envelope skipped"), 0
+        )
+
+    def test_transport_and_html_tags_are_not_quotation_envelopes(self):
+        """<channel> relays the user's own words and <div> is pasted markup:
+        neither is one agent quoting a conversation at another."""
+        write_transcript(self.tmp / "projects" / "telegram" / "s.jsonl", [
+            make_entry("assistant", "카드 스타일을 정리했습니다.", iso_days_ago(1)),
+            make_entry("user",
+                       '<channel source="telegram" chat_id="1">'
+                       "아니 그게 아니라 배경색만 바꾸라고</channel>",
+                       iso_days_ago(1)),
+        ])
+        digest = self.digest_of()
+        self.assertEqual(stat_value(digest, "Correction moments found"), 1)
+
+
 class TestRetroEvidence(BootstrapTestCase):
 
     def test_korean_cluster_reports_positive_ack_hint(self):

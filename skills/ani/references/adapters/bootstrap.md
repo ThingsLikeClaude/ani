@@ -267,6 +267,14 @@ Two things the *agent* must respect, since the digest lands in context and then 
   template or pasted diff happened to carry a trigger phrase. The cost is recall: a genuine
   correction typed as the very first turn of a session ("no, not that — the thing from
   yesterday") is invisible to the miner.
+- **A quoted trigger is a mention, not a use.** Text inside a paired machine envelope —
+  a tag name carrying `_` or `-`, such as `<observed_from_primary_session>`,
+  `<user_request>` or `<system-reminder>` — is removed before matching, and the count
+  appears as `Corrections only inside a quoted envelope skipped`. An agent that watches or
+  summarises another session relays that session into its own prompt, and such a turn has
+  agent turns of its own, so the preceding-turn check does not catch it. Tags without
+  `_` or `-` are left alone: pasted markup (`<div>`) and message transports (`<channel>`,
+  which carries the user's *own* words in from another client) stay matchable.
 - **The file cap is breadth-fair, not exhaustive.** Files are read newest-first within each
   project, round-robin across projects, so no single machine-written directory can spend the
   whole budget. Whatever the cap trims is each project's old tail; raise `--max-files` when

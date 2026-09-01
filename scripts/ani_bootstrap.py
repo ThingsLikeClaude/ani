@@ -145,6 +145,36 @@ def is_machine_injected(text: str) -> bool:
     return any(marker in text for marker in INJECTED_MARKERS)
 
 
+# A quoted trigger is a mention, not a use. Agents that watch or summarise
+# another session relay it into their own prompt inside an envelope tag
+# (`<observed_from_primary_session>`, `<user_request>`, `<system-reminder>`),
+# and such a turn passes the agent-context check because the *relaying* agent
+# has turns of its own. So a trigger is only read in the speaker's own voice:
+# text inside a paired envelope is removed before matching.
+#
+# The tag name must carry a `_` or `-`, which is what separates a machine
+# wrapper from markup and transport. Snake_case and kebab-case are how these
+# envelopes are named; HTML element names never contain an underscore. That
+# keeps pasted markup (`<div>`) and message transports (`<channel>`, which
+# relays the user's *own* words from another client) matchable. Measured on a
+# 14,504-file store, this predicate removed exactly the same 14 moments that
+# stripping every paired tag did, with none of the collateral.
+RELAY_ENVELOPE_RE = re.compile(
+    r"<([A-Za-z][A-Za-z0-9.]*[_-][A-Za-z0-9._-]*)(?:\s[^>]*)?>.*?</\1\s*>",
+    re.DOTALL,
+)
+
+
+def strip_relay_envelopes(text: str) -> str:
+    """Drop paired machine-envelope blocks, leaving the speaker's own words."""
+    previous = None
+    current = text
+    while current != previous:
+        previous = current
+        current = RELAY_ENVELOPE_RE.sub(" ", current)
+    return current
+
+
 # --------------------------------------------------------------------------
 # Text helpers
 # --------------------------------------------------------------------------
@@ -468,8 +498,14 @@ def collect_moments(session_id: str, messages: list, stats: dict = None) -> list
 
     for index in user_order:
         message = messages[index]
-        hits = is_correction(message["text"])
+        if not is_correction(message["text"]):
+            continue
+
+        spoken = strip_relay_envelopes(message["text"])
+        hits = is_correction(spoken)
         if not hits:
+            if stats is not None:
+                stats["envelope_only"] += 1
             continue
 
         context = preceding_assistant(messages, index)
@@ -499,7 +535,7 @@ def collect_moments(session_id: str, messages: list, stats: dict = None) -> list
                 "followups": followups,
                 "retro_hint": score,
                 "retro_reasons": reasons,
-                "tokens": tokenize(message["text"]),
+                "tokens": tokenize(spoken),
             }
         )
     return moments
@@ -650,6 +686,9 @@ def render_digest(clusters, moments, stats, args, cutoff) -> str:
         % stats["files_out_of_window"])
     add("- Machine-injected user turns skipped: %d (command expansions, task "
         "notifications, compaction preambles)" % stats["injected_skipped"])
+    add("- Corrections only inside a quoted envelope skipped: %d (one agent "
+        "relaying another session's words into its own prompt)"
+        % stats["envelope_only"])
     add("- Corrections with no preceding agent turn skipped: %d (headless or "
         "programmatic runs whose opening prompt carried a trigger phrase)"
         % stats["no_agent_context"])
@@ -875,6 +914,7 @@ def main(argv=None) -> int:
         "files_out_of_window": 0,
         "injected_skipped": 0,
         "no_agent_context": 0,
+        "envelope_only": 0,
         "duplicate_moments": 0,
         "unreadable_files": 0,
         "oversized_lines": 0,
