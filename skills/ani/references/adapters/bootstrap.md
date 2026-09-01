@@ -43,7 +43,8 @@ root in a plugin install (two directories above the skill's SKILL.md), the
 repo root in a checkout. Or call the script by its absolute path.
 
 ```bash
-python scripts/ani_bootstrap.py [--claude-dir PATH] [--project SLUG] [--days N] [--out FILE]
+python scripts/ani_bootstrap.py [--claude-dir PATH] [--project SLUG] [--days N]
+                                [--max-files N] [--out FILE]
 ```
 
 | Flag | Default | Meaning |
@@ -51,6 +52,7 @@ python scripts/ani_bootstrap.py [--claude-dir PATH] [--project SLUG] [--days N] 
 | `--claude-dir` | `~/.claude` | Harness config dir holding `projects/<slug>/*.jsonl`. |
 | `--project` | *(all)* | Substring filter on the project slug. Use it to bootstrap one repo. |
 | `--days` | `90` | Only entries newer than N days. `0` disables the window. Entries with no timestamp are always kept. |
+| `--max-files` | `2000` | Transcript files opened in one sweep. A long-lived store outgrows the default — 90 days of history can hold more files than the cap — and the digest says so when it fires. Raise it to sweep exhaustively. |
 | `--out` | *(stdout)* | Write the digest to a file (UTF-8, no BOM, LF) instead of stdout. |
 
 Exit code is `0` whenever the script ran, including "found nothing" and "directory does not
@@ -259,6 +261,16 @@ Two things the *agent* must respect, since the digest lands in context and then 
 - **Hindsight is not consent.** A past session ending without complaint is weak evidence, the
   same `+1` it is worth anywhere else in ani. It never justifies writing an `active` pattern
   without the user's approval.
+- **A correction needs something to correct.** A user turn with no agent turn before it in
+  the same session is not mined, and the count appears as `Corrections with no preceding
+  agent turn skipped`. It is the opening turn of a headless or programmatic run whose prompt
+  template or pasted diff happened to carry a trigger phrase. The cost is recall: a genuine
+  correction typed as the very first turn of a session ("no, not that — the thing from
+  yesterday") is invisible to the miner.
+- **The file cap is breadth-fair, not exhaustive.** Files are read newest-first within each
+  project, round-robin across projects, so no single machine-written directory can spend the
+  whole budget. Whatever the cap trims is each project's old tail; raise `--max-files` when
+  the digest reports a cap firing.
 
 ---
 

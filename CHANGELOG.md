@@ -5,6 +5,42 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Found by the first real bootstrap sweep against a 14,504-file transcript store (#6, #7).
+
+### Fixed
+
+- **A correction now needs something to correct** (#6). A user turn with no agent turn
+  before it in the same session is no longer mined, and the count is reported as
+  `Corrections with no preceding agent turn skipped`. Such a turn opens a headless or
+  programmatic run, and its payload — a prompt template, a pasted diff — can carry a
+  trigger phrase. Worse, those runs repeat their template verbatim, so the noise was
+  collecting the `+2` repetition bonus that only genuine recurrence should earn. On the
+  real store this removed both multi-member clusters from the sweep: the only two
+  candidates that reached the repetition signal were an automated commit-message
+  generator invoking itself. The cost is recall, and it is documented: a real correction
+  typed as a session's very first turn is now invisible.
+
+### Changed
+
+- **The file budget is shared round-robin across projects** (#7). Global newest-first
+  fixed the alphabet (#1) but not the crowd: a directory a machine writes to produces
+  files faster than a human produces conversations, so it took the newest slots and
+  starved everyone else. On the real store one observer's own session directory held
+  **46.1%** of the 2,000-file budget and **54 of 88 projects were never opened**. Files
+  are now read newest-first *within* each project and interleaved round-robin across
+  them: coverage went to **88 of 88 projects**, and the largest single-project share fell
+  to 5.3%. A cap that fires now trims each project's old tail instead of deleting whole
+  projects from the sweep.
+
+### Added
+
+- **`--max-files` (default 2000)** (#7). The default is not generous enough for a
+  long-lived store — 90 days of history on the store above holds 4,687 files, more than
+  twice the cap — so the ceiling is raisable from the CLI. The exhaustive sweep it enables
+  read 14,512 files and 690,124 lines in 1m51s.
+
 ## [0.1.3] - 2026-08-31
 
 Two defects found by the first post-update verification session (issues #4, #5).

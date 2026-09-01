@@ -17,7 +17,7 @@ See ``skills/ani/references/adapters/bootstrap.md`` for the full flow and
 
 Usage:
     python ani_bootstrap.py [--claude-dir PATH] [--project SLUG]
-                            [--days N] [--out FILE]
+                            [--days N] [--max-files N] [--out FILE]
 """
 
 from __future__ import annotations
@@ -452,7 +452,16 @@ def retro_hint(messages: list, user_order: list, position: int):
     return score, reasons
 
 
-def collect_moments(session_id: str, messages: list) -> list:
+def collect_moments(session_id: str, messages: list, stats: dict = None) -> list:
+    """Correction moments in one session.
+
+    A correction corrects something. A user turn with no agent turn before it
+    in the same session cannot be correcting the agent: it is the opening turn
+    of a headless or programmatic run whose payload — a prompt template, a
+    pasted diff — happened to carry a trigger phrase. Those turns are the
+    machine talking, they repeat verbatim across runs, and repetition is worth
+    `+2`, so mining them is how noise buys itself a promotion.
+    """
     moments = []
     user_order = [i for i, m in enumerate(messages) if m["role"] == "user"]
     position_of = {idx: pos for pos, idx in enumerate(user_order)}
@@ -461,6 +470,12 @@ def collect_moments(session_id: str, messages: list) -> list:
         message = messages[index]
         hits = is_correction(message["text"])
         if not hits:
+            continue
+
+        context = preceding_assistant(messages, index)
+        if not context:
+            if stats is not None:
+                stats["no_agent_context"] += 1
             continue
 
         followups = []
@@ -480,7 +495,7 @@ def collect_moments(session_id: str, messages: list) -> list:
                 "sort_key": timestamp or datetime.min.replace(tzinfo=timezone.utc),
                 "quote": trim(message["text"], QUOTE_TRIM),
                 "matched": hits,
-                "assistant_context": trim(preceding_assistant(messages, index), CONTEXT_TRIM),
+                "assistant_context": trim(context, CONTEXT_TRIM),
                 "followups": followups,
                 "retro_hint": score,
                 "retro_reasons": reasons,
@@ -635,13 +650,16 @@ def render_digest(clusters, moments, stats, args, cutoff) -> str:
         % stats["files_out_of_window"])
     add("- Machine-injected user turns skipped: %d (command expansions, task "
         "notifications, compaction preambles)" % stats["injected_skipped"])
+    add("- Corrections with no preceding agent turn skipped: %d (headless or "
+        "programmatic runs whose opening prompt carried a trigger phrase)"
+        % stats["no_agent_context"])
     add("- Duplicate moments removed: %d (same moment mirrored across "
         "resumed-session transcripts)" % stats["duplicate_moments"])
     add("- Unreadable files skipped: %d" % stats["unreadable_files"])
     add("- Oversized lines skipped: %d (cap %d bytes per line)"
         % (stats["oversized_lines"], MAX_LINE_BYTES))
     add("- Files skipped over cap: %d (cap %d files per sweep)"
-        % (stats["files_over_cap"], MAX_FILES))
+        % (stats["files_over_cap"], args.max_files))
     add("- Messages dropped over cap: %d (cap %d per session, %d per sweep)"
         % (stats["messages_over_cap"], MAX_MESSAGES_PER_SESSION, MAX_MESSAGES_TOTAL))
     add("- Moments dropped over cap: %d (cap %d per sweep)"
@@ -733,11 +751,20 @@ def render_digest(clusters, moments, stats, args, cutoff) -> str:
 # Driver
 # --------------------------------------------------------------------------
 def iter_transcripts(projects_dir: Path, project_filter, cutoff=None, stats=None):
-    """Yield (slug, path) newest-first by file mtime.
+    """Yield (slug, path) newest-first *within* each project, round-robin
+    across projects.
 
-    Ordering is load-bearing because of MAX_FILES: the cap must trim the
+    Ordering is load-bearing because of the file cap: the cap must trim the
     *oldest* history, never an alphabetical tail — one huge directory early in
     the alphabet used to starve every project after it (issue #1).
+
+    Global newest-first fixed the alphabet but not the crowd: a project a
+    machine writes to (an observer's own sessions, a plugin cache) produces
+    files faster than a human produces conversations, so it takes the newest
+    slots and starves everyone else. Rounds are interleaved instead — every
+    project offers its newest unread file each round, the round is served
+    newest-first, and a cap that fires trims each project's old tail rather
+    than deleting whole projects from the sweep.
 
     With a ``cutoff``, files last modified before it are skipped outright and
     counted: every entry in such a file was written before the window opens,
@@ -750,7 +777,7 @@ def iter_transcripts(projects_dir: Path, project_filter, cutoff=None, stats=None
         slugs = sorted(p for p in projects_dir.iterdir() if p.is_dir())
     except OSError:                                          # pragma: no cover
         return
-    candidates = []
+    per_project = []
     for slug_dir in slugs:
         if project_filter and project_filter not in slug_dir.name:
             continue
@@ -758,6 +785,7 @@ def iter_transcripts(projects_dir: Path, project_filter, cutoff=None, stats=None
             files = sorted(slug_dir.glob("*.jsonl"))
         except OSError:                                      # pragma: no cover
             continue
+        candidates = []
         for path in files:
             try:
                 mtime = path.stat().st_mtime
@@ -770,9 +798,19 @@ def iter_transcripts(projects_dir: Path, project_filter, cutoff=None, stats=None
                         stats["files_out_of_window"] += 1
                     continue
             candidates.append((mtime, slug_dir.name, path))
-    candidates.sort(key=lambda item: (-item[0], item[1], item[2].name))
-    for _, slug, path in candidates:
-        yield slug, path
+        if candidates:
+            candidates.sort(key=lambda item: (-item[0], item[2].name))
+            per_project.append(candidates)
+
+    depth = 0
+    while per_project:
+        round_items = [group[depth] for group in per_project if len(group) > depth]
+        if not round_items:
+            break
+        round_items.sort(key=lambda item: (-item[0], item[1], item[2].name))
+        for _, slug, path in round_items:
+            yield slug, path
+        depth += 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -798,6 +836,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=90,
         help="Only consider entries newer than N days; 0 or less disables the filter (default: 90)",
+    )
+    parser.add_argument(
+        "--max-files",
+        type=int,
+        default=MAX_FILES,
+        help=(
+            "Transcript files opened in one sweep (default: %d). A long-lived "
+            "store outgrows the default, and the digest says so when the cap "
+            "fires; raise it to sweep exhaustively." % MAX_FILES
+        ),
     )
     parser.add_argument(
         "--out",
@@ -826,6 +874,7 @@ def main(argv=None) -> int:
         "out_of_window": 0,
         "files_out_of_window": 0,
         "injected_skipped": 0,
+        "no_agent_context": 0,
         "duplicate_moments": 0,
         "unreadable_files": 0,
         "oversized_lines": 0,
@@ -838,13 +887,13 @@ def main(argv=None) -> int:
 
     moments = []
     for slug, path in iter_transcripts(projects_dir, args.project, cutoff, stats):
-        if stats["files"] >= MAX_FILES:
+        if stats["files"] >= args.max_files:
             stats["files_over_cap"] += 1
             continue
         stats["files"] += 1
         session_id = "%s/%s" % (slug, path.name)
         messages = scan_file(path, cutoff, stats, budget)
-        found = collect_moments(session_id, messages)
+        found = collect_moments(session_id, messages, stats)
         room = max(MAX_MOMENTS - len(moments), 0)
         if len(found) > room:
             stats["moments_over_cap"] += len(found) - room

@@ -189,6 +189,35 @@ class TestDetection(BootstrapTestCase):
         self.assertEqual(stat_value(digest, "Correction moments found"), 2)
 
 
+class TestAgentContextRequirement(BootstrapTestCase):
+    """A correction corrects something. A user turn with no agent turn before
+    it in the same session cannot be correcting the agent — it is a headless
+    or programmatic invocation whose payload happened to match a trigger."""
+
+    def test_correction_without_a_preceding_agent_turn_is_not_a_moment(self):
+        write_transcript(self.tmp / "projects" / "headless" / "run.jsonl", [
+            make_entry("user", "커밋 메시지를 생성해줘. 규칙: 아니라고 적지 말 것",
+                       iso_days_ago(1)),
+            make_entry("assistant", "WIP(scope): 요약", iso_days_ago(1)),
+        ])
+        digest = self.digest_of()
+        self.assertEqual(stat_value(digest, "Correction moments found"), 0)
+        self.assertEqual(
+            stat_value(digest, "Corrections with no preceding agent turn skipped"), 1
+        )
+
+    def test_correction_after_an_agent_turn_is_still_mined(self):
+        write_transcript(self.tmp / "projects" / "real" / "chat.jsonl", [
+            make_entry("assistant", "글자색과 배경색을 모두 바꿨습니다.", iso_days_ago(1)),
+            make_entry("user", "아니 그게 아니라 배경색만 바꾸라고", iso_days_ago(1)),
+        ])
+        digest = self.digest_of()
+        self.assertEqual(stat_value(digest, "Correction moments found"), 1)
+        self.assertEqual(
+            stat_value(digest, "Corrections with no preceding agent turn skipped"), 0
+        )
+
+
 class TestRetroEvidence(BootstrapTestCase):
 
     def test_korean_cluster_reports_positive_ack_hint(self):
@@ -395,6 +424,23 @@ class TestResourceCaps(BootstrapTestCase):
             self.assertEqual(stat_value(digest, label), 0, label)
         self.assertNotIn("A resource cap fired during this sweep", digest)
 
+    def test_max_files_flag_overrides_the_default_cap(self):
+        """A real store outgrows the default: 90 days of history can hold more
+        files than the cap, so the ceiling has to be raisable from the CLI."""
+        for slug in ("proj-a", "proj-b", "proj-c"):
+            write_transcript(self.tmp / "projects" / slug / "s.jsonl", [
+                make_entry("assistant", "응답 " + slug, iso_days_ago(1)),
+                make_entry("user", "아니 그게 아니라 " + slug, iso_days_ago(1)),
+            ])
+        capped = self.digest_of("--max-files", "2")
+        self.assertEqual(stat_value(capped, "Files scanned"), 2)
+        self.assertEqual(stat_value(capped, "Files skipped over cap"), 1)
+        self.assertIn("A resource cap fired during this sweep", capped)
+
+        raised = self.digest_of("--max-files", "3")
+        self.assertEqual(stat_value(raised, "Files scanned"), 3)
+        self.assertEqual(stat_value(raised, "Files skipped over cap"), 0)
+
 
 class TestUntrustedExcerptIsolation(BootstrapTestCase):
     """Digest excerpts are verbatim transcript text: data, never instructions."""
@@ -468,6 +514,7 @@ class TestRobustness(BootstrapTestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8", newline="\n") as handle:
             handle.write("\n")
+            handle.write(make_entry("assistant", "응답입니다", iso_days_ago(1)) + "\n")
             handle.write(make_entry("user", "아니 그게 아니라 빈 줄이 있어도 된다",
                                     iso_days_ago(1)) + "\n")
             handle.write("   \n")
@@ -509,6 +556,7 @@ class TestFileOrdering(BootstrapTestCase):
     def test_days_zero_disables_the_mtime_prefilter(self):
         old = self.tmp / "projects" / "aaa-archive" / "old.jsonl"
         write_transcript(old, [
+            make_entry("assistant", "옛날 응답", iso_days_ago(400)),
             make_entry("user", "아니 그게 아니라 아주 오래된 교정", iso_days_ago(400)),
         ])
         age_file(old, 400)
@@ -528,6 +576,22 @@ class TestFileOrdering(BootstrapTestCase):
             age_file(path, age)
         order = [slug for slug, _ in module.iter_transcripts(base, "")]
         self.assertEqual(order, ["zzz", "mmm", "aaa"])
+
+    def test_one_busy_project_cannot_eat_the_whole_file_budget(self):
+        """Global newest-first lets a single machine-written project consume
+        the cap and starve every other one. The budget is shared round-robin."""
+        module = load_script_module()
+        base = self.tmp / "projects"
+        for i in range(10):
+            path = base / "busy" / ("%d.jsonl" % i)
+            write_transcript(path, [make_entry("user", "noise %d" % i)])
+            age_file(path, 1)
+        for slug in ("quiet-one", "quiet-two"):
+            path = base / slug / "only.jsonl"
+            write_transcript(path, [make_entry("user", "hello " + slug)])
+            age_file(path, 50)
+        first_three = [slug for slug, _ in module.iter_transcripts(base, "")][:3]
+        self.assertEqual(sorted(first_three), ["busy", "quiet-one", "quiet-two"])
 
 
 class TestResumedSessionDedup(BootstrapTestCase):
@@ -556,9 +620,11 @@ class TestResumedSessionDedup(BootstrapTestCase):
         # different line content. Must still count as two members.
         stamp = iso_days_ago(2)
         write_transcript(self.tmp / "projects" / "acme" / "s1.jsonl", [
+            make_entry("assistant", "글자색까지 바꿨습니다.", stamp),
             make_entry("user", "아니 그게 아니라 배경색만 바꾸라고", stamp),
         ])
         write_transcript(self.tmp / "projects" / "acme" / "s2.jsonl", [
+            make_entry("assistant", "팔레트를 통째로 교체했습니다.", stamp),
             make_entry("user", "아니 그게 아니라 배경색 토큰만 바꾸라고", stamp),
         ])
         digest = self.digest_of()
