@@ -11,7 +11,7 @@ tests/test_knowledge.py.
 Run:  python -m unittest discover -s tests -v
 """
 
-import os, shutil, subprocess, sys, tempfile, unittest, importlib.util
+import os, re, shutil, subprocess, sys, tempfile, unittest, importlib.util
 from pathlib import Path
 
 TESTS_DIR = Path(__file__).resolve().parent
@@ -73,6 +73,9 @@ class RepoSlugTests(PublishTestCase):
         self.assertTrue(self.mod.slug_matches("widgets", "acme/widgets"))
         self.assertTrue(self.mod.slug_matches("acme/widgets", "acme/widgets"))
         self.assertFalse(self.mod.slug_matches("other", "acme/widgets"))
+        # Asymmetric: two full slugs must match in full. Group (a) is labelled
+        # provenance, and another org's same-named repo is not this repo.
+        self.assertFalse(self.mod.slug_matches("acme/widgets", "other/widgets"))
 
 
 S_TEMPLATE = """---
@@ -81,7 +84,7 @@ compiled_from: [{froms}]
 date_compiled: 2026-08-28
 keywords: [{keywords}]
 scope: global
-status: active
+status: {status}
 summary: {summary}
 ---
 
@@ -116,9 +119,11 @@ class CandidateTestCase(PublishTestCase):
         return path
 
     def write_s(self, store, pattern_id, froms="F-20260828-aaaaaaaa",
-                keywords="widget", summary="Use when widgets misbehave"):
+                keywords="widget", summary="Use when widgets misbehave",
+                status="active"):
         return self.write_pattern(store, pattern_id + ".md", S_TEMPLATE.format(
-            id=pattern_id, froms=froms, keywords=keywords, summary=summary))
+            id=pattern_id, froms=froms, keywords=keywords, summary=summary,
+            status=status))
 
     def write_f(self, store, pattern_id, project=None):
         line = "project: %s\n" % project if project else ""
@@ -268,6 +273,72 @@ class DigestTests(CandidateTestCase):
         code, out, err = self.run_script("--repo", root, "--global-store", store)
         self.assertEqual(code, 0, err)
         self.assertIn("yes — will be skipped", out)
+
+    def test_a_quarantined_pattern_is_held_back_and_counted(self):
+        """`review-needed`/`retired` are excluded from search, so not publishable.
+
+        The filter is visible: the digest names how many it held back, because a
+        miner that narrows what it offers invisibly is deciding for the user.
+        """
+        store = self.make_store()
+        self.write_f(store, "F-20260828-aaaaaaaa", project="acme/widgets")
+        self.write_s(store, "S-alpha")
+        self.write_s(store, "S-omega", status="retired")
+        self.assertEqual([p["id"] for p in self.mod.global_patterns(store)],
+                         ["S-alpha"])
+        root = self.make_repo("https://github.com/acme/widgets.git")
+        code, out, err = self.run_script("--repo", root, "--global-store", store)
+        self.assertEqual(code, 0, err)
+        self.assertIn("S-alpha", out)
+        self.assertNotIn("S-omega", out)
+        self.assertIn("Quarantined patterns held back: 1", out)
+
+    def test_a_store_that_does_not_exist_says_so_not_nothing_points_here(self):
+        """A typo in --global-store must not read as a confident false negative."""
+        root = self.make_repo("https://github.com/acme/widgets.git")
+        code, out, err = self.run_script("--repo", root,
+                                         "--global-store", os.path.join(root, "nope"))
+        self.assertEqual(code, 0, err)
+        self.assertIn("## Scan", out)
+        self.assertIn("Store directory found: no", out)
+        self.assertIn("the global store directory was not found", out)
+        self.assertNotIn("Nothing in the global store points at this repo", out)
+        self.assertIn("--global-store", out)
+
+    def test_a_pipe_in_a_summary_does_not_shift_the_columns(self):
+        """The shifted cells would be `already in overlay` and `group`."""
+        store = self.make_store()
+        self.write_f(store, "F-20260828-aaaaaaaa", project="acme/widgets")
+        self.write_s(store, "S-alpha", summary="Use `a | b`, never `a || b`")
+        root = self.make_repo("https://github.com/acme/widgets.git")
+        overlay = os.path.join(root, ".ani", "patterns")
+        os.makedirs(overlay)
+        with open(os.path.join(overlay, "S-alpha.md"), "w", encoding="utf-8") as fh:
+            fh.write("---\nid: S-alpha\n---\n")
+        code, out, err = self.run_script("--repo", root, "--global-store", store)
+        self.assertEqual(code, 0, err)
+        row = [line for line in out.splitlines() if line.startswith("| `S-alpha`")][0]
+        cells = re.split(r"(?<!\\)\|", row)
+        self.assertEqual(len(cells), 7, row)
+        self.assertEqual(cells[4].strip(), "yes — will be skipped")
+        self.assertEqual(cells[5].strip(), "captured in this repo")
+
+
+class GitResolutionTests(PublishTestCase):
+
+    def test_git_is_not_resolved_from_the_working_directory(self):
+        """Windows' CreateProcess searches the cwd before PATH; a repo may be
+        freshly cloned third-party code carrying its own `git.exe`."""
+        here = self.make_deep_dir("ani-pub-git-")
+        for name in ("git.exe", "git"):
+            with open(os.path.join(here, name), "w", encoding="utf-8") as fh:
+                fh.write("x\n")
+        original = os.getcwd()
+        self.addCleanup(os.chdir, original)
+        os.chdir(here)
+        resolved = self.mod._resolve_git()
+        self.assertNotEqual(os.path.dirname(os.path.abspath(resolved)),
+                            os.path.abspath(here))
 
 
 if __name__ == "__main__":
