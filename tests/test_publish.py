@@ -75,5 +75,94 @@ class RepoSlugTests(PublishTestCase):
         self.assertFalse(self.mod.slug_matches("other", "acme/widgets"))
 
 
+S_TEMPLATE = """---
+id: {id}
+compiled_from: [{froms}]
+date_compiled: 2026-08-28
+keywords: [{keywords}]
+scope: global
+status: active
+summary: {summary}
+---
+
+## Situation
+When it happens.
+"""
+
+F_TEMPLATE = """---
+id: {id}
+status: compiled
+date: 2026-08-28
+{project_line}trigger_quote: "no, not that"
+keywords: [widget]
+---
+
+## Intent
+Something.
+"""
+
+
+class CandidateTestCase(PublishTestCase):
+
+    def make_store(self):
+        store = self.make_deep_dir("ani-pub-store-")
+        os.makedirs(os.path.join(store, "patterns"))
+        return store
+
+    def write_pattern(self, store, name, text):
+        path = os.path.join(store, "patterns", name)
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+        return path
+
+    def write_s(self, store, pattern_id, froms="F-20260828-aaaaaaaa",
+                keywords="widget", summary="Use when widgets misbehave"):
+        return self.write_pattern(store, pattern_id + ".md", S_TEMPLATE.format(
+            id=pattern_id, froms=froms, keywords=keywords, summary=summary))
+
+    def write_f(self, store, pattern_id, project=None):
+        line = "project: %s\n" % project if project else ""
+        return self.write_pattern(store, pattern_id + ".md",
+                                  F_TEMPLATE.format(id=pattern_id, project_line=line))
+
+
+class GroupATests(CandidateTestCase):
+
+    def test_front_matter_stops_at_the_closing_fence(self):
+        store = self.make_store()
+        path = self.write_s(store, "S-alpha")
+        front = self.mod.read_front_matter(path)
+        self.assertEqual(front["id"], "S-alpha")
+        self.assertEqual(front["scope"], "global")
+        self.assertNotIn("## Situation", front)
+
+    def test_a_list_parses_with_or_without_brackets(self):
+        self.assertEqual(self.mod.parse_list("[a, b]"), ["a", "b"])
+        self.assertEqual(self.mod.parse_list("a, b"), ["a", "b"])
+        self.assertEqual(self.mod.parse_list(""), [])
+
+    def test_a_pattern_whose_failure_names_this_repo_is_in_group_a(self):
+        store = self.make_store()
+        self.write_f(store, "F-20260828-aaaaaaaa", project="acme/widgets")
+        self.write_s(store, "S-alpha")
+        found = self.mod.group_a(self.mod.global_patterns(store), store, "acme/widgets")
+        self.assertEqual([p["id"] for p in found], ["S-alpha"])
+
+    def test_a_pattern_from_another_repo_is_not(self):
+        store = self.make_store()
+        self.write_f(store, "F-20260828-aaaaaaaa", project="other/thing")
+        self.write_s(store, "S-alpha")
+        self.assertEqual(self.mod.group_a(self.mod.global_patterns(store), store,
+                                          "acme/widgets"), [])
+
+    def test_a_failure_with_no_project_field_is_not_guessed_into_group_a(self):
+        """The schema says omit rather than guess; the miner honours that."""
+        store = self.make_store()
+        self.write_f(store, "F-20260828-aaaaaaaa", project=None)
+        self.write_s(store, "S-alpha")
+        self.assertEqual(self.mod.group_a(self.mod.global_patterns(store), store,
+                                          "acme/widgets"), [])
+
+
 if __name__ == "__main__":
     unittest.main()

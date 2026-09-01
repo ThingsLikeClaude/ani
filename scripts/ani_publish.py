@@ -60,3 +60,81 @@ def slug_matches(recorded, current) -> bool:
     if recorded == current:
         return True
     return recorded.rsplit("/", 1)[-1] == current.rsplit("/", 1)[-1]
+
+
+MAX_PATTERN_BYTES = 64 * 1024
+MAX_PATTERNS = 200
+
+
+def read_front_matter(path: str) -> dict:
+    """Every ``key: value`` in the leading ``---`` block. Values stay raw."""
+    front = {}
+    try:
+        if os.path.getsize(path) > MAX_PATTERN_BYTES:
+            return front
+        with open(path, "r", encoding="utf-8-sig", errors="replace") as handle:
+            text = handle.read(MAX_PATTERN_BYTES)
+    except OSError:
+        return front
+    inside = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped == "---":
+            if inside:
+                break
+            inside = True
+            continue
+        if not inside:
+            if not stripped:
+                continue
+            break
+        if ":" in stripped:
+            key, _, value = stripped.partition(":")
+            front[key.strip()] = value.strip()
+    return front
+
+
+def parse_list(raw) -> list:
+    if not raw:
+        return []
+    return [item.strip() for item in raw.strip("[]").split(",") if item.strip()]
+
+
+def global_patterns(store: str) -> list:
+    """Every ``S-*.md`` in a store, in filename order, capped."""
+    directory = os.path.join(store, "patterns")
+    try:
+        names = sorted(n for n in os.listdir(directory)
+                       if n.startswith("S-") and n.endswith(".md"))
+    except OSError:
+        return []
+    out = []
+    for name in names[:MAX_PATTERNS]:
+        path = os.path.join(directory, name)
+        front = read_front_matter(path)
+        if not front.get("id"):
+            continue
+        out.append({
+            "id": front["id"],
+            "path": path,
+            "summary": front.get("summary", ""),
+            "status": front.get("status", ""),
+            "keywords": parse_list(front.get("keywords")),
+            "compiled_from": parse_list(front.get("compiled_from")),
+        })
+    return out
+
+
+def group_a(patterns: list, store: str, slug) -> list:
+    """Patterns whose source failures name this repo."""
+    if not slug:
+        return []
+    out = []
+    for pattern in patterns:
+        for failure_id in pattern["compiled_from"]:
+            path = os.path.join(store, "patterns", failure_id + ".md")
+            recorded = read_front_matter(path).get("project")
+            if slug_matches(recorded, slug):
+                out.append(pattern)
+                break
+    return out
