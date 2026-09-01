@@ -1,6 +1,6 @@
 ---
 name: ani
-description: Use when the user signals you misread their intent — "아니 그게 아니라", "그게 아니라", "그거 말고", "내 말은", "no, that's not what I meant", "not what I asked", "you misunderstood", "いや、そうじゃなくて", "不是这个意思" — or any rephrasing, in any language, that means "no, that's not it". Also use proactively before any non-trivial task when an ani store exists — the user's global ~/.ani or a project .ani/ overlay — so recorded correction patterns are consulted before acting, and when the user types /ani, /ani ok <id>, /ani resolve <F-id>, or /ani bootstrap.
+description: Use when the user signals you misread their intent — "아니 그게 아니라", "그게 아니라", "그거 말고", "내 말은", "no, that's not what I meant", "not what I asked", "you misunderstood", "いや、そうじゃなくて", "不是这个意思" — or any rephrasing, in any language, that means "no, that's not it". Also use proactively before any non-trivial task when an ani store exists — the user's global ~/.ani or a project .ani/ overlay — so recorded correction patterns are consulted before acting, and when the user types /ani, /ani ok <id>, /ani resolve <F-id>, /ani bootstrap, or /ani git.
 ---
 
 # ani — the "no, that's not it" protocol
@@ -336,6 +336,7 @@ plain `/ani`.
 | `/ani ok <S-id>` | Promote a `provisional` S to `active` |
 | `/ani resolve <F-id>` | Spend a dedicated run on one unresolved F: reproduce, resolve, verify, compile. The **only** licence to work a failure outside live work |
 | `/ani bootstrap [--days N]` | Mine past sessions for corrections, cluster them, and present a digest for bulk approval — see `references/adapters/bootstrap.md` |
+| `/ani git` | List global patterns worth sharing with this repo's team, and copy the ones the user selects into the project overlay — see `references/adapters/publish.md` |
 | `/ani doctor` | Run `scripts/ani_doctor.py` at the **install root** by **absolute path** (Bash; resolve the root first — References, "Resolving the install root"): python, store resolution and write probe, INDEX parse counts, knowledge sources, plugin install. Prints `OK`/`WARN`/`FAIL` per check; exit `0` clean, `1` warnings, `2` failures. It cannot see whether hooks fire — only `[ani-index v1]` in a fresh session shows that |
 
 ## Red flags — stop and correct course
