@@ -98,6 +98,12 @@ paraphrased away:
   the two-group split exists precisely so a guess is never shown as if it were
   provenance.
 
+Relay the digest's `## Scan` block with the table, and its
+"**A resource cap fired during this scan.**" warning whenever that appears — the
+digest was written to a file the user never opens, and those two are what make
+the table honest about what it is *not* showing: how many patterns were held
+back, and whether the miner managed to read the whole store.
+
 Patterns whose `status` is `review-needed` or `retired` are **not in the table at
 all**: they are excluded from search because a wrong manual cannot be re-applied
 (`references/schemas.md` §2), so publishing one would hand a team a pattern that
