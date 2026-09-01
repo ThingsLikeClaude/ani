@@ -164,5 +164,45 @@ class GroupATests(CandidateTestCase):
                                           "acme/widgets"), [])
 
 
+class GroupBTests(CandidateTestCase):
+
+    def make_repo_with_files(self, *paths):
+        root = self.make_repo("https://github.com/acme/widgets.git")
+        for rel in paths:
+            full = os.path.join(root, rel.replace("/", os.sep))
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w", encoding="utf-8") as fh:
+                fh.write("x\n")
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+        return root
+
+    def test_vocabulary_covers_the_top_two_path_levels(self):
+        root = self.make_repo_with_files("hooks/trigger.py", "docs/deep/nested/note.md")
+        vocab = self.mod.repo_vocabulary(root)
+        self.assertIn("hooks", vocab)
+        self.assertIn("docs", vocab)
+        self.assertIn("deep", vocab)
+        self.assertNotIn("nested", vocab)
+
+    def test_a_keyword_hit_puts_a_pattern_in_group_b(self):
+        store = self.make_store()
+        self.write_s(store, "S-hooky", keywords="hooks, python")
+        patterns = self.mod.global_patterns(store)
+        found = self.mod.group_b(patterns, {"hooks"}, exclude_ids=set())
+        self.assertEqual([p["id"] for p in found], ["S-hooky"])
+
+    def test_group_a_members_are_not_repeated_in_group_b(self):
+        store = self.make_store()
+        self.write_s(store, "S-hooky", keywords="hooks")
+        patterns = self.mod.global_patterns(store)
+        self.assertEqual(self.mod.group_b(patterns, {"hooks"}, {"S-hooky"}), [])
+
+    def test_no_overlap_means_no_candidates(self):
+        store = self.make_store()
+        self.write_s(store, "S-hooky", keywords="unrelated")
+        patterns = self.mod.global_patterns(store)
+        self.assertEqual(self.mod.group_b(patterns, {"hooks"}, set()), [])
+
+
 if __name__ == "__main__":
     unittest.main()

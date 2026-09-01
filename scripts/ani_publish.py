@@ -138,3 +138,36 @@ def group_a(patterns: list, store: str, slug) -> list:
                 out.append(pattern)
                 break
     return out
+
+
+MAX_TRACKED_FILES = 5000
+
+
+def repo_vocabulary(repo_root: str) -> set:
+    """Tokens from the top two path levels of the tracked files.
+
+    Two levels because `hooks/`, `scripts/`, `docs/specs/` name what a repo is
+    about, while a fourth-level filename names one detail of it. Works on a repo
+    whose overlay is still empty, which is the first-publish case.
+    """
+    listing = _git(["ls-files"], repo_root)
+    vocabulary = set()
+    if not listing:
+        return vocabulary
+    for line in listing.splitlines()[:MAX_TRACKED_FILES]:
+        for part in line.replace("\\", "/").split("/")[:2]:
+            token = os.path.splitext(part)[0].strip().lower()
+            if len(token) >= 2:
+                vocabulary.add(token)
+    return vocabulary
+
+
+def group_b(patterns: list, vocabulary: set, exclude_ids: set) -> list:
+    """Keyword overlap. A guess, and labelled as one wherever it is shown."""
+    if not vocabulary:
+        return []
+    return [
+        pattern for pattern in patterns
+        if pattern["id"] not in exclude_ids
+        and vocabulary & {k.lower() for k in pattern["keywords"]}
+    ]
