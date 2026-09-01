@@ -281,7 +281,7 @@ Two things the *agent* must respect, since the digest lands in context and then 
   the digest reports a cap firing.
 - **The overlay route is per-cluster, not a standing sink.** A cluster can land in a repo's
   overlay instead of the global store only when the user says so for that specific cluster at
-  approval time, never as a batch default. Moving a pattern that already lives in the global
+  approval time, never as a batch default. Copying a pattern that already lives in the global
   store into an overlay afterward is a separate command, `/ani git` (`adapters/publish.md`).
 
 ---
