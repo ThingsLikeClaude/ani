@@ -641,6 +641,95 @@ class DualStoreHintTests(HookTestCase):
         self.assertEqual(self.hint_ids_of(self.context_of(out)), ["S-dark-mode-tokens"])
 
 
+class GlobalStoreIsNotAProjectOverlayTests(HookTestCase):
+    """The global store lives at ``~/.ani``, which sits in the parent walk of
+    every folder under home. Starting a session in one of them let the walk
+    claim the user's personal store as the *project* overlay — announced as
+    repo-local and shared with the team, and matched at project priority. It is
+    none of those things, and no repo it gets attributed to exists."""
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+
+        sys.dont_write_bytecode = True
+        spec = importlib.util.spec_from_file_location("ani_trigger_overlay", HOOK)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        cls.mod = module
+
+    def home_with_global_store(self):
+        """A stand-in home holding ``.ani``, plus a folder nested inside it.
+
+        The nesting is load-bearing: a temp directory is itself under the real
+        home on Windows, so a shallow work dir puts the developer's own
+        ``~/.ani`` inside MAX_PARENT_LEVELS and the walk finds *that* instead.
+        Two extra levels push it out of range, leaving the stand-in home as the
+        only store the walk can reach.
+        """
+        home = tempfile.mkdtemp(prefix="ani-home-")
+        self.addCleanup(shutil.rmtree, home, True)
+        store = os.path.join(home, ".ani")
+        os.makedirs(store)
+        self.write_index(store, GLOBAL_INDEX_FIXTURE)
+        work = os.path.join(home, "nested", "deeper", "scratch")
+        os.makedirs(work)
+        return store, work
+
+    def with_global_store(self, store):
+        previous = os.environ.get("ANI_GLOBAL_STORE")
+        os.environ["ANI_GLOBAL_STORE"] = store
+
+        def restore():
+            if previous is None:
+                os.environ.pop("ANI_GLOBAL_STORE", None)
+            else:
+                os.environ["ANI_GLOBAL_STORE"] = previous
+
+        self.addCleanup(restore)
+
+    def test_the_global_store_is_not_claimed_as_a_project_overlay(self):
+        store, work = self.home_with_global_store()
+        self.with_global_store(store)
+        self.assertIsNone(self.mod.find_index(work))
+
+    def test_the_store_is_still_offered_as_the_global_one(self):
+        store, work = self.home_with_global_store()
+        self.with_global_store(store)
+        project_index = self.mod.find_index(work)
+        global_index = self.mod.find_global_index(project_index)
+        self.assertEqual(
+            os.path.normcase(os.path.abspath(global_index or "")),
+            os.path.normcase(os.path.join(store, "INDEX.md")),
+        )
+
+    def test_a_store_the_caller_stands_in_is_still_the_project_overlay(self):
+        """Configuring the global store *at* the working directory says this
+        one store serves both roles. It is physically in the tree being worked
+        on, so it stays the project overlay; only inheritance from an ancestor
+        is what the walk refuses."""
+        store, work = self.home_with_global_store()
+        overlay = os.path.join(work, ".ani")
+        os.makedirs(overlay)
+        self.write_index(overlay, INDEX_FIXTURE)
+        self.with_global_store(overlay)
+        self.assertEqual(
+            os.path.normcase(os.path.abspath(self.mod.find_index(work) or "")),
+            os.path.normcase(os.path.join(overlay, "INDEX.md")),
+        )
+
+    def test_a_genuine_overlay_below_home_is_still_found(self):
+        store, work = self.home_with_global_store()
+        self.with_global_store(store)
+        overlay = os.path.join(work, ".ani")
+        os.makedirs(overlay)
+        self.write_index(overlay, INDEX_FIXTURE)
+        self.assertEqual(
+            os.path.normcase(os.path.abspath(self.mod.find_index(work) or "")),
+            os.path.normcase(os.path.join(overlay, "INDEX.md")),
+        )
+
+
 class UntrustedIndexTests(HookTestCase):
     """The INDEX is untrusted input; its ids are echoed into the model's context."""
 

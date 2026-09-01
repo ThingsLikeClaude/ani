@@ -22,6 +22,17 @@ Found by the first real bootstrap sweep against a 14,504-file transcript store (
   generator invoking itself. The cost is recall, and it is documented: a real correction
   typed as a session's very first turn is now invisible.
 
+- **The global store is no longer inherited as a project overlay** (#9). `find_index`
+  walks up to five parent levels looking for `.ani/INDEX.md`, and the global store lives at
+  `~/.ani` — inside the parent walk of every directory under home. A session started in any
+  such directory had the user's personal store announced as `project store (...) — repo-local,
+  shared with the team` and matched at project priority, for a repo that does not exist;
+  `find_global_index`'s `_same_path` guard suppressed the duplicate but not the
+  misattribution, so the store was offered *only* under the wrong name. Reaching the global
+  store by climbing now ends the walk and answers "no project overlay". A store in the
+  starting directory itself is unaffected: it is physically in the tree being worked on, so
+  repo-local remains the safety-relevant truth about it.
+
 - **A quoted trigger no longer counts as a correction** (#8). An agent that observes or
   summarises another session relays it into its own prompt inside an envelope tag, and
   those turns survived #6 because the *relaying* agent has turns of its own. Text inside a
