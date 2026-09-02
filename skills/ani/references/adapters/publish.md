@@ -86,7 +86,7 @@ why a script does the scanning at all.
 ## 4. Present the digest
 
 Show the table the script emitted, verbatim: both groups, in the columns it
-printed — `id | summary | compiled from | already in overlay | group`. Do not
+printed — `id | summary | status | compiled from | already in overlay | group`. Do not
 re-sort, re-word, or merge the two groups into one list; keep the digest's own
 caveat sentence for the keyword-overlap group intact, in the user's view, not
 paraphrased away:
@@ -109,6 +109,17 @@ all**: they are excluded from search because a wrong manual cannot be re-applied
 (`references/schemas.md` §2), so publishing one would hand a team a pattern that
 was quarantined *because it was proven wrong*. The digest's `## Scan` block names
 how many were held back, which is what keeps the filter visible instead of silent.
+
+A `provisional` row is a different matter and stays in the table. It is not
+known-wrong; it is auto-compiled and the user has never approved it. Publishing
+one hands a team a rule its own author has not yet vouched for, so say that
+plainly for any provisional row the user is about to select — and note that
+`/ani ok <id>` on the global original is what raises it to `active`. The copy
+carries its `status` across unchanged (step 6 changes `scope` and nothing else),
+so a provisional pattern stays provisional in the overlay and every teammate who
+applies it gets the same disclosure the user would. That is the honest outcome,
+not a defect: what the user did not vouch for does not become vouched-for by
+being shared.
 
 If the digest reports no candidates, say so and stop — there is nothing to
 select, and that is a normal outcome, not a broken run. Relay the digest's own

@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **The `/ani git` digest says whether a candidate is `provisional`.** The table gains a
+  `status` column, and the `## Scan` block counts how many offered rows are provisional.
+  `review-needed` and `retired` were already held back — a wrong manual is not publishable —
+  but `provisional` is *unvouched*, not wrong, so it stays a candidate and is now labelled
+  as one. Publishing one hands a team a rule its own author has never approved; the copy
+  carries `provisional` across, so everyone who applies it gets the same disclosure. Three
+  facts now have a column each, one per question the user has to answer before sharing a
+  row: is the provenance recorded or guessed (`group`), is a teammate's file at stake
+  (`already in overlay`), and has the author vouched for this at all (`status`).
+
 ## [0.3.0] - 2026-09-02
 
 ### Fixed
