@@ -5,6 +5,46 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **A pattern overridden by the project overlay no longer vanishes without trace**
+  (#11). An S id is a slug, not a random string, so two people who learn the same lesson
+  land on the same id — `S-commit-style` is what anyone would call it. The overlay's row
+  wins, which is the matching priority in `schemas.md` working as specified, but the
+  loser was dropped silently: the reader could not tell their own pattern had been
+  overridden, let alone go read it. The session-start injection now names the shadowed
+  ids on one budget-guarded line, capped at five plus a count. Resolution is unchanged —
+  only the silence is. With nothing shadowed the line costs nothing, and a full budget
+  still spends itself on patterns rather than on talking about them.
+
+### Added
+
+- **`/ani git` publishes selected patterns into the repo overlay.** A stdlib miner
+  (`scripts/ani_publish.py`) lists global patterns worth sharing with this repo — those
+  whose source failures recorded this repo's slug, plus a second, separately labelled group
+  matched only on keyword overlap with the repo's own vocabulary. The user selects rows one
+  at a time; there is no "approve all", because `schemas.md` §2 forbids relocation inferred
+  from a bulk approval. Selected patterns are **copied**, not moved: publishing is teaching,
+  and the global original is untouched. An id already in the overlay is skipped and named,
+  never overwritten. Patterns quarantined as `review-needed` or `retired` are held back from
+  the digest — they are excluded from search because a wrong manual cannot be re-applied, so
+  they are not publishable either — and the digest reports how many it withheld, because a
+  filter the user cannot see is the miner deciding something. Nothing is committed — that
+  stays the user's to do.
+- **Every F now records which repo it came from, by one rule.** `project` is filled from the
+  repo slug — `owner/repo` from the `origin` remote when there is one, else the repo root's
+  directory name; omit rather than guess — wherever an F is written: the capture step, the
+  bootstrap sweep, the template, the schema. The rule previously existed only on the reading
+  side, so the provenance group `/ani git` offers filled only when an agent's ad-hoc choice
+  happened to match, and a bootstrap-seeded store could not fill it at all. The field does
+  not repair retroactively: an F carries whatever was chosen when it was written.
+- **A project pattern says where it came from.** An overlay `S` is disclosed once per id per
+  session when it shadowed a global pattern of the same id, or when git shows someone else
+  wrote it. It never blocks: ani's guarantee is that no automatic step beats a user veto, not
+  that every step asks first.
+
 ## [0.2.1] - 2026-09-01
 
 ### Fixed

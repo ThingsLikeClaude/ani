@@ -476,16 +476,58 @@ class DualStoreTests(SessionStartTestCase):
         self.assertGreater(counts[0], 0)
         self.assertNotIn("S-gactive-0000", context)
 
+    def index_rows_for(self, context, pattern_id):
+        """INDEX table rows for one id — the disclosure line is not a row."""
+        return [
+            line for line in context.splitlines()
+            if line.startswith("| %s " % pattern_id)
+        ]
+
     def test_shared_id_is_injected_once_from_the_project_store(self):
         project = self.make_project(SHARED_ID_PROJECT_FIXTURE)
         store = self.make_global_store(SHARED_ID_GLOBAL_FIXTURE)
         context = self.context_of(
             self.run_hook({"cwd": project}, cwd=project, global_store=store)[1]
         )
-        self.assertEqual(context.count("S-shared-id"), 1, context)
+        self.assertEqual(len(self.index_rows_for(context, "S-shared-id")), 1, context)
         self.assertIn("Use when the project overlay owns it", context)
         self.assertNotIn("Use when the global copy would win", context)
         self.assertIn("S-global-only", context)
+
+    def test_a_shadowed_global_row_is_disclosed_by_id(self):
+        """S ids are slugs, so two people writing about one topic land on the
+        same id. The overlay wins, which is the matching priority working as
+        specified — but silently, the reader cannot tell their own pattern was
+        overridden, or go read it. The id is named so they can."""
+        project = self.make_project(SHARED_ID_PROJECT_FIXTURE)
+        store = self.make_global_store(SHARED_ID_GLOBAL_FIXTURE)
+        context = self.context_of(
+            self.run_hook({"cwd": project}, cwd=project, global_store=store)[1]
+        )
+        self.assertIn("also in the global store under the same id", context)
+        self.assertIn("S-shared-id", context.split("also in the global store")[1])
+        # The row itself is still injected exactly once, from the overlay.
+        self.assertEqual(len(self.index_rows_for(context, "S-shared-id")), 1, context)
+
+    def test_no_disclosure_line_when_nothing_is_shadowed(self):
+        project = self.make_project()
+        store = self.make_global_store(GLOBAL_INDEX_FIXTURE)
+        context = self.context_of(
+            self.run_hook({"cwd": project}, cwd=project, global_store=store)[1]
+        )
+        self.assertNotIn("also in the global store under the same id", context)
+
+    def test_the_disclosure_never_displaces_a_row(self):
+        """A full budget spends itself on patterns, not on talking about them."""
+        colliding = BIG_INDEX_FIXTURE.split("\n", 3)[3]
+        project = self.make_project(BIG_INDEX_FIXTURE)
+        store = self.make_global_store(BIG_INDEX_FIXTURE)
+        full = self.context_of(
+            self.run_hook({"cwd": project}, cwd=project, global_store=store)[1]
+        )
+        self.assertNotIn("also in the global store under the same id", full)
+        self.assertLess(len(full.encode("utf-8")), 7 * 1024)
+        self.assertGreater(len(colliding), 0)
 
     def test_a_global_store_equal_to_the_project_store_is_injected_once(self):
         """One directory serving as both stores is announced once, as global.

@@ -100,6 +100,17 @@ OMITTED_TEMPLATE = (
     "({project} project rows and {global_} global rows omitted — "
     "read INDEX.md in each store for the full index)"
 )
+# An S id is a slug, not a random string, so two people who learn the same
+# lesson land on the same id — `S-commit-style` is what anyone would call it.
+# The overlay's row wins, which is the matching priority working as specified,
+# but the loser used to vanish without trace: the reader could not tell their
+# own pattern had been overridden, let alone go read it. Naming the ids is
+# what makes it actionable; a bare count would not be.
+SHADOWED_TEMPLATE = (
+    "(also in the global store under the same id, not shown: {ids} — "
+    "the project overlay's row above is the one that applies)"
+)
+MAX_SHADOWED_SHOWN = 5
 RECURRENCE_TEMPLATE = (
     "unresolved failure class recurring: {id} (seen {count}×) — "
     "consider addressing during related work"
@@ -303,6 +314,23 @@ def recurrence_line(stores):
     return None
 
 
+def shadowed_line(shadowed):
+    """One line naming the ids a higher-priority store overrode, or None.
+
+    Budget-guarded by the caller like every other trailing line: a full budget
+    spends itself on patterns, not on talking about them. Long lists are cut,
+    because the point is to give the reader somewhere to look, not a census.
+    """
+    if not shadowed:
+        return None
+    shown = shadowed[:MAX_SHADOWED_SHOWN]
+    ids = ", ".join(shown)
+    remainder = len(shadowed) - len(shown)
+    if remainder > 0:
+        ids += " and %d more" % remainder
+    return SHADOWED_TEMPLATE.format(ids=ids)
+
+
 def build_index_block(stores):
     """The (possibly truncated) view of both stores, or None when empty.
 
@@ -319,6 +347,7 @@ def build_index_block(stores):
     prelude = []
     sections = []
     claimed = set()
+    shadowed = []
     for kind, index_path, text in stores:
         head, buckets = split_index(text)
         if not prelude:
@@ -327,6 +356,8 @@ def build_index_block(stores):
         for status in ani_trigger.STATUS_PRIORITY:
             for pattern_id, line in buckets[status]:
                 if pattern_id in claimed:
+                    if pattern_id not in shadowed:
+                        shadowed.append(pattern_id)
                     continue
                 claimed.add(pattern_id)
                 rows.append(line)
@@ -366,6 +397,11 @@ def build_index_block(stores):
     line = recurrence_line(stores)
     if line and used + len(line.encode("utf-8")) + 1 <= budget:
         parts.append(line)
+        used += len(line.encode("utf-8")) + 1
+    line = shadowed_line(shadowed)
+    if line and used + len(line.encode("utf-8")) + 1 <= budget:
+        parts.append(line)
+        used += len(line.encode("utf-8")) + 1
     if omitted["project"] or omitted["global"]:
         parts.append(
             OMITTED_TEMPLATE.format(

@@ -1,6 +1,6 @@
 ---
 name: ani
-description: Use when the user signals you misread their intent — "아니 그게 아니라", "그게 아니라", "그거 말고", "내 말은", "no, that's not what I meant", "not what I asked", "you misunderstood", "いや、そうじゃなくて", "不是这个意思" — or any rephrasing, in any language, that means "no, that's not it". Also use proactively before any non-trivial task when an ani store exists — the user's global ~/.ani or a project .ani/ overlay — so recorded correction patterns are consulted before acting, and when the user types /ani, /ani ok <id>, /ani resolve <F-id>, or /ani bootstrap.
+description: Use when the user signals you misread their intent — "아니 그게 아니라", "그게 아니라", "그거 말고", "내 말은", "no, that's not what I meant", "not what I asked", "you misunderstood", "いや、そうじゃなくて", "不是这个意思" — or any rephrasing, in any language, that means "no, that's not it". Also use proactively before any non-trivial task when an ani store exists — the user's global ~/.ani or a project .ani/ overlay — so recorded correction patterns are consulted before acting, and when the user types /ani, /ani ok <id>, /ani resolve <F-id>, /ani bootstrap, or /ani git.
 ---
 
 # ani — the "no, that's not it" protocol
@@ -69,12 +69,28 @@ overlay only when the user asks for it. Never write outside a store. Fields:
 
 Store rank dominates; inside a store, `active` outranks `provisional`. One id in
 both stores is one pattern: the project copy wins and the global one is ignored.
+An S id is a slug, so two people who learn the same lesson land on the same id —
+the override is common, not exotic. The session-start injection therefore **names**
+the ids it shadowed; step 6b covers what to say when you apply one.
 
 5. Skip any S whose status is `review-needed` or `retired` — they are excluded
    from search so a wrong manual cannot be re-applied.
 6. A `provisional` S **must be disclosed on every application**, with its ID:
    "Applying provisional pattern `S-dark-mode-tokens` (auto-compiled, not yet
    human-approved) — tell me if it is wrong." The user can veto at any time.
+6b. An S from the **project overlay** is disclosed once per id per session when
+   either is true: the session-start injection named it as shadowing a global
+   pattern of the same id, or its file was last written by someone else
+   (`git log -1 --format=%ae -- <path>` against `git config user.email`).
+   No injection to consult — manual mode, or the line dropped for budget — then
+   read the shadowing half off the two `INDEX.md` files you already opened in
+   step 1: the same id in both is a shadow.
+   "Applying `S-commit-style` from the project overlay (written by a teammate;
+   your global store has a pattern under the same id) — tell me if it is wrong."
+   Drop whichever half is false. This **does not block**: say it and carry on,
+   the same way the handshake notice is said once and then never again that
+   session. No git, no configured email, or an untracked file → evaluate the
+   shadowing half alone and never guess at authorship.
 7. Whenever a pattern shaped your action, cite its ID in your reply.
 
 **Knowledge sources (optional).** With `knowledge_sources` set in config.md, a
@@ -165,6 +181,10 @@ do one thing, fix.
   the install root (see References; no templates present → build the file from
   `references/schemas.md`) — the random 8-char suffix is what makes concurrent
   sessions collision-free.
+- Capturing inside a repo? Fill `project` by the slug rule: `owner/repo` from the
+  `origin` remote when there is one, else the repo root's directory name; omit
+  rather than guess. This is the field `/ani git` later reads as provenance, and
+  it never repairs retroactively — whatever is written now is what that F carries.
 - Does this correction match an already-captured F class (INDEX keywords)?
   Increment that F's `recurrence` instead of opening a duplicate class.
 - `## Excerpt` is REQUIRED and must be a **self-contained verbatim** exchange:
@@ -332,6 +352,7 @@ plain `/ani`.
 | `/ani ok <S-id>` | Promote a `provisional` S to `active` |
 | `/ani resolve <F-id>` | Spend a dedicated run on one unresolved F: reproduce, resolve, verify, compile. The **only** licence to work a failure outside live work |
 | `/ani bootstrap [--days N]` | Mine past sessions for corrections, cluster them, and present a digest for bulk approval — see `references/adapters/bootstrap.md` |
+| `/ani git` | List global patterns worth sharing with this repo's team, and copy the ones the user selects into the project overlay — see `references/adapters/publish.md` |
 | `/ani doctor` | Run `scripts/ani_doctor.py` at the **install root** by **absolute path** (Bash; resolve the root first — References, "Resolving the install root"): python, store resolution and write probe, INDEX parse counts, knowledge sources, plugin install. Prints `OK`/`WARN`/`FAIL` per check; exit `0` clean, `1` warnings, `2` failures. It cannot see whether hooks fire — only `[ani-index v1]` in a fresh session shows that |
 
 ## Red flags — stop and correct course

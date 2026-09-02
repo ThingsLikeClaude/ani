@@ -66,7 +66,7 @@ sessions collision-free, so any random source is fine.
 | `id` | yes | string | Must equal the filename without `.md` (`F-20260828-a1b2c3d4`). |
 | `status` | yes | enum | `captured` \| `compiled` \| `archived`. New files start `captured`. |
 | `date` | yes | `YYYY-MM-DD` | From the `date` command. Must match the `id` date part. |
-| `project` | no | slug | Repo or project slug. Omit rather than guess. |
+| `project` | no | slug | `owner/repo` from the `origin` remote when there is one, else the repo root's directory name; omit rather than guess. |
 | `session` | no | string | Harness-specific session reference. **Never load-bearing** — the `Excerpt` section must stand alone without it. |
 | `trigger_quote` | yes | quoted string | The user's correction, **verbatim**, in their language. One line; truncate long turns with `…` but never paraphrase. |
 | `keywords` | yes | list | 3–6 lowercase tokens for INDEX matching. Include the domain (`css`), the artifact (`background`), the situation (`dark-mode`). If this F is a counterexample to an S, include that S id. |

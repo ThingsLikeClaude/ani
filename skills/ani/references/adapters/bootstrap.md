@@ -123,9 +123,18 @@ from may be deleted tomorrow. Set `recurrence` to the cluster's member count min
 sweep already measured how often each class came back, which is exactly what orders the
 unresolved queue (`schemas.md` §3).
 
+When the cluster came from work inside a repo, fill `project` by the slug rule: `owner/repo`
+from the `origin` remote when there is one, else the repo root's directory name; omit rather
+than guess. **The harness project slug this sweep already knows is not a repo slug** — the
+path-mangled form (`D--00-PROJECTS-ani`, whatever `--project` filtered on) names a transcript
+directory, not a repository, and must never be written into `project`. It is the tempting
+wrong value here, because it is the one already in hand. No repo, or no confident slug: leave
+the field out. `/ani git` reads this field as provenance and it never repairs retroactively.
+
 **Step 5 — Draft provisional S files for clusters reaching `E >= T`.** Per
-`references/schemas.md` §2: `status: provisional`, `scope: global` to match the store they are
-written to, `compiled_from` pointing at the F from step 4, `summary` in use-when form. Every
+`references/schemas.md` §2: `status: provisional`, `scope` matching the store it is written
+to (`global` unless the user routed this cluster to the overlay), `compiled_from` pointing at
+the F from step 4, `summary` in use-when form. Every
 `## Verification` item carries all five fields. Derive the verification from the failure —
 "what check would have caught this misreading?" — not from a generic checklist.
 
@@ -279,6 +288,10 @@ Two things the *agent* must respect, since the digest lands in context and then 
   project, round-robin across projects, so no single machine-written directory can spend the
   whole budget. Whatever the cap trims is each project's old tail; raise `--max-files` when
   the digest reports a cap firing.
+- **The overlay route is per-cluster, not a standing sink.** A cluster can land in a repo's
+  overlay instead of the global store only when the user says so for that specific cluster at
+  approval time, never as a batch default. Copying a pattern that already lives in the global
+  store into an overlay afterward is a separate command, `/ani git` (`adapters/publish.md`).
 
 ---
 
