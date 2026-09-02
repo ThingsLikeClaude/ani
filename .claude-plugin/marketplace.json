@@ -9,7 +9,7 @@
       "name": "ani",
       "source": ".",
       "description": "Agent Negative Index — a resolution loop for negative feedback",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "author": {
         "name": "Donghyun"
       }
