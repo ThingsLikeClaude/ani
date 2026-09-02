@@ -319,9 +319,45 @@ class DigestTests(CandidateTestCase):
         self.assertEqual(code, 0, err)
         row = [line for line in out.splitlines() if line.startswith("| `S-alpha`")][0]
         cells = re.split(r"(?<!\\)\|", row)
-        self.assertEqual(len(cells), 7, row)
-        self.assertEqual(cells[4].strip(), "yes — will be skipped")
-        self.assertEqual(cells[5].strip(), "captured in this repo")
+        self.assertEqual(len(cells), 8, row)
+        self.assertEqual(cells[5].strip(), "yes — will be skipped")
+        self.assertEqual(cells[6].strip(), "captured in this repo")
+
+
+    def row_cells(self, out, pattern_id):
+        row = [line for line in out.splitlines()
+               if line.startswith("| `%s`" % pattern_id)][0]
+        return [cell.strip() for cell in re.split(r"(?<!\\)\|", row)]
+
+    def store_with_one_of_each_status(self):
+        store = self.make_store()
+        self.write_f(store, "F-20260828-aaaaaaaa", project="acme/widgets")
+        self.write_s(store, "S-alpha")
+        self.write_s(store, "S-beta", status="provisional")
+        return store
+
+    def test_a_row_says_whether_the_pattern_is_provisional_or_active(self):
+        """`provisional` means auto-compiled and never human-approved.
+
+        Unlike a quarantined pattern it is not known-wrong, so it stays a
+        candidate. But publishing one hands a team a rule the user has not
+        vouched for, which is a fact to weigh per row — the same kind of fact
+        as `group` and `already in overlay`, so it gets a column too.
+        """
+        store = self.store_with_one_of_each_status()
+        root = self.make_repo("https://github.com/acme/widgets.git")
+        code, out, err = self.run_script("--repo", root, "--global-store", store)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.row_cells(out, "S-beta")[3], "provisional")
+        self.assertEqual(self.row_cells(out, "S-alpha")[3], "active")
+
+    def test_the_scan_block_counts_the_provisional_candidates_it_offers(self):
+        """Held back is counted; offered-but-unvouched is counted too."""
+        store = self.store_with_one_of_each_status()
+        root = self.make_repo("https://github.com/acme/widgets.git")
+        code, out, err = self.run_script("--repo", root, "--global-store", store)
+        self.assertEqual(code, 0, err)
+        self.assertIn("Provisional candidates offered: 1", out)
 
 
 class GitResolutionTests(PublishTestCase):

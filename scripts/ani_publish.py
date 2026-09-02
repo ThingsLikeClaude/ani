@@ -274,8 +274,9 @@ def _rows(patterns, taken, label):
     lines = []
     for pattern in patterns:
         collision = "yes — will be skipped" if pattern["id"] in taken else "no"
-        lines.append("| `%s` | %s | %s | %s | %s |" % (
+        lines.append("| `%s` | %s | %s | %s | %s | %s |" % (
             _cell(pattern["id"]), _cell(pattern["summary"] or "(no summary)"),
+            _cell(pattern["status"] or "(unknown)"),
             _cell(", ".join(pattern["compiled_from"]) or "(none)"),
             collision, label))
     return lines
@@ -296,6 +297,9 @@ def _scan_block(a_rows, b_rows, slug, store, scan) -> list:
         "- Patterns scanned: %d" % scan["scanned"],
         "- Quarantined patterns held back: %d (`review-needed` / `retired` — "
         "excluded from search, so not publishable)" % scan["quarantined"],
+        "- Provisional candidates offered: %d (auto-compiled, never human-approved "
+        "— offered, but not vouched for)"
+        % sum(1 for row in a_rows + b_rows if row["status"] == "provisional"),
         "- Patterns skipped over the size cap: %d (cap %d bytes per file)"
         % (scan["oversized"], MAX_PATTERN_BYTES),
         "- Patterns skipped over the count cap: %d (cap %d per run, filename order)"
@@ -344,8 +348,8 @@ def render_digest(a_rows, b_rows, taken, slug, store, scan) -> str:
     if not a_rows and not b_rows:
         out += _empty_note(store, scan)
         return "\n".join(out)
-    out += ["| id | summary | compiled from | already in overlay | group |",
-            "| --- | --- | --- | --- | --- |"]
+    out += ["| id | summary | status | compiled from | already in overlay | group |",
+            "| --- | --- | --- | --- | --- | --- |"]
     out += _rows(a_rows, taken, "captured in this repo")
     out += _rows(b_rows, taken, "keyword overlap")
     out += ["",

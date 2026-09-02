@@ -87,7 +87,17 @@ as provenance is the failure mode this project exists to prevent.
 
 ### A3. The table
 
-One table, columns: `id | summary | compiled from | already in overlay | group`.
+One table, columns:
+`id | summary | status | compiled from | already in overlay | group`.
+
+Three of those are facts the user must weigh before sharing a row, and each
+earns its own column for that reason: `group` says whether provenance is
+recorded or guessed, `already in overlay` says whether a teammate's file would
+be at stake, and `status` says whether the user has vouched for the pattern at
+all. `review-needed` and `retired` never reach the table — a wrong manual is not
+publishable — but `provisional` does, because it is unvouched rather than wrong,
+and hiding that would let someone hand their team a rule they have not approved
+themselves.
 
 Rows are sorted so related subjects sit together — keyword Jaccard, the same
 lexical clustering the bootstrap miner already uses. That clustering is the
