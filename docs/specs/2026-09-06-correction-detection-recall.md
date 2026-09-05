@@ -1,6 +1,8 @@
 # Correction detection — recall, one table, and the way in
 
-Status: design, approved 2026-09-06. Implements nothing yet.
+Status: approved 2026-09-06, implemented 2026-09-06 on branch
+`fix/correction-detection-recall`. The measurement claims in C1 were corrected
+against post-implementation numbers; C5 records a defect found while building.
 
 ## Why
 
@@ -114,14 +116,33 @@ Two things were suspected and measured out:
 The table is rebuilt around the five families the measurement found. Each entry
 keeps a slug, as today, so a hit is attributable.
 
-**Family A — sentence-initial `아니`.** Anchored to the start of the prompt and
-required not to continue into a word: `아니라`, `아니면`, `아닌`, `아니야` are
-ordinary Korean and must not fire. Measured 5.2/day.
+**Family A — sentence-initial `아니`.** Anchored to the start of the prompt, with
+one exclusion. The rule this spec first wrote — that `아니라`, `아니면`, `아닌`,
+`아니야` are ordinary Korean and must not fire — was mostly disproved by
+measurement. `아니야`, `아니요` and `아니지` opened four sentences in the window
+and every sampled one was a genuine correction. `아닌데`, `아닌가`, `아니었` and
+`아니라` opened none, so a guard for them is untested weight in a table that is
+read on every prompt. `아니면` is a conjunction proposing an alternative
+(`아니면 버셀 배포할까???`) and is the only measured false positive. The rule is
+therefore **sentence-initial `아니`, except `아니면`** — a lookahead on word
+class, not on sentence mood: ground-truth quote #5 is interrogative and a
+genuine correction, so a guard keyed on `?` would have been wrong. Measured
+5.2/day. The two specific phrases the old table already carried,
+`아니 그게 아니라` and `아니 그런 뜻이`, keep their `ko-ani-` slugs and sort
+first, so the prefix names the family rather than the bare interjection, which
+takes `ko-ani-muntu`; a hit on either specific phrase is still attributable to
+Family A, which is what the prefix is for.
 
 **Family B — stated recurrence.** `여러번`, `또 그러`, `아까도`, and
 `(전에도|계속) (말|얘기|지적)`. Measured 0.6/day. The rarest family and the most
 valuable: the user is saying the recurrence out loud, which is exactly what
-`recurrence` exists to count.
+`recurrence` exists to count. `여러번` alone is an ordinary frequency adverb —
+`여러번 실행해줘` is a request, not a complaint — so it fires only when paired
+with a speech verb, the same `말|얘기|지적` that `전에도`/`계속` carry; `아까도`
+stays bare, since nothing measured disproves it. `왜 자꾸` and `또 그러네`,
+which the old table carried loose, are complaints about repetition and so belong
+here: both were re-slugged into `ko-recur-`, and the second widened to
+`또 그러`.
 
 **Family C — defect report.** `안 되는데`, `안 됨`, `작동 안`. Measured 4.8/day.
 
@@ -136,12 +157,46 @@ English and Japanese and Chinese entries are kept as they are. They were not
 measured — this user's corpus is Korean — and removing unmeasured entries would
 be a change with no evidence behind it.
 
-**Accepted false-positive cost.** Roughly 12 nudges/day against 317 turns/day:
-under 4% of turns carry a marker. A false nudge costs one line of injected text
-and an agent that reads it, finds nothing to correct, and moves on. Invariant 1
-is what makes that cheap. The families are ordered so the most specific matches
-first, and the emitted slug says which family fired, so a family that proves
-noisy in practice can be removed on evidence rather than on taste.
+**The false-positive budget, and how it was missed.** This spec accepted
+"roughly 12 nudges/day against 317 turns/day: under 4% of turns." Both halves of
+that fraction were wrong. The numerator was a prediction, not a count. The
+denominator counted injected skill bodies, compaction preambles, system
+reminders and tool results as user speech. Re-measured after implementation over
+the same five-day window, counting only prompts the user actually typed:
+
+| | turns/day | fires/day | % of turns |
+| --- | --- | --- | --- |
+| corpus | 273 | — | — |
+| old detector | — | 1.4 | 0.51% |
+| new detector | — | 15.8 | 5.78% |
+
+Recall against the eleven ground-truth `trigger_quote` values went from 1/11
+(9%) to 10/11 (91%). The known miss is still the bare directive
+`굉장히 짧고 간결하게 눌러서 써야돼`, exactly as this spec predicted.
+
+Per family, measured after implementation: A 6.0/day, D 5.6/day, C 2.0/day,
+B 0.8/day, E 0.2/day, plus the pre-existing entries. These are attributions from
+the built table — one slug per firing turn, first match wins — and not the
+per-phrase probes the family rates above came from, so the two lists are not
+comparable entry by entry.
+
+5.78% is not under 4%, so the budget was missed. What the sample says is that
+the overshoot is not noise: reading the 79 fires in the window, most are genuine
+corrections. This user corrects roughly 6% of their turns. That is a fact about
+the user, not a defect in the detector.
+
+The reason a wide net stays cheap is unchanged. A false nudge costs one line of
+injected text and an agent that reads it, finds nothing to correct, and moves
+on. Invariant 1 is what makes that cheap. The families are ordered so the most
+specific matches first, and the emitted slug says which family fired, so a family
+that proves noisy in practice can be removed on evidence rather than on taste.
+
+Two entries a tightening pass would look at first, recorded as observations and
+not as changes. `ko-defect-an-doem` (`안\s*됨`, 1.6/day) fires inside long
+instruction text that merely contains the phrase as a rule rather than as a
+complaint about the work. `ko-verdict-chonseu` and `ko-verdict-guryeo` (1.4/day
+combined) are low-volume and specific to this user's vocabulary. Neither has been
+touched, and neither should be on the strength of one window.
 
 ### C2. One table, two readers
 
@@ -159,6 +214,11 @@ The hook's form wins: sentence-initial anchoring (Family A) needs a regex, and a
 literal substring table cannot express it. The miner already imports nothing from
 `hooks/`, but the precedent exists — `scripts/ani_doctor.py` imports
 `ani_trigger` — so the import direction is established.
+
+The miner runs those patterns over the raw turn, not over its normalised form.
+`is_correction` used to match literal phrases against `normalize_for_match(text)`
+(lowercased, punctuation stripped); keeping that step would be a second matcher
+wearing the first one's name, and it would silently break Family A's anchor.
 
 `POSITIVE_ACK_PHRASES` stays in the miner and is out of scope. It feeds the
 miner's retro hint, not the live path, and it was not measured.
@@ -192,6 +252,37 @@ The live half — nudge to Path B to F to E to S — is agent behaviour and stay
 prose. What can be pinned is that the nudge fires: given a prompt from each
 family, the hook emits `[ani-nudge v1]` with the expected slug.
 
+### C5. The description the model reads
+
+Found while implementing C1, after this spec was approved.
+
+The `description:` in `skills/ani/SKILL.md` frontmatter is the string that
+decides whether the model loads the skill at all. It listed nine example
+phrases, and all nine were drawn from `CORRECTION_PHRASES` — the same table
+that had just measured 9% recall.
+
+The three-layer story above says the hook owns recall and the model's semantic
+match owns breadth. Both layers were written from one vocabulary, so the second
+could not rescue what the first missed. `프런트가 안되는데?` is not a rephrasing
+of "no, that's not it"; it is a symptom report, and nothing in that description
+told the model to treat a symptom report as a correction. A user who reports the
+bug instead of naming the mistake fell through both layers at once.
+
+The description now names an example from each of the five families — a
+rejection, a symptom report, a verdict on the work, a reminder they already said
+it, a reversal — and says outright that a complaint or a bug report is a
+correction too. The constraint that shaped the rewrite: this string is resident
+in every session's context, so breadth had to come without bloat. It cost 190
+characters, roughly 50 tokens, and one example was dropped to make room —
+`그게 아니라`, strictly weaker than the `아니 그게 아니라` beside it, whose slot
+went to the bare `아니` that opens five of the eleven labelled corrections. The
+en/ja/zh examples, the Path A clause and the `/ani …` subcommands are unchanged.
+
+`tests/test_skill_frontmatter.py` pins the coupling rather than trusting it: for
+each of the five families, the description must offer a quoted example that the
+hook's own table attributes to that family. A family cannot be added to the
+table while the description is left behind.
+
 ## Testing
 
 Propositions, each one a test:
@@ -201,9 +292,11 @@ Propositions, each one a test:
   간결하게 눌러서 써야돼`, is a bare directive with no correction marker; it is
   named here as a known miss rather than chased with a rule that would fire on
   every instruction the user gives.)
-- **C1 precision guards.** `아니라`, `아니면`, `아닌데`, `아니야` at the start of
-  a prompt do not fire Family A. A prompt with `아니` in the middle of a sentence
-  does not fire it either.
+- **C1 precision guards.** `아니면` at the start of a prompt does not fire
+  Family A, and neither does `아니` in the middle of a sentence. `아니야`,
+  `아니요` and `아니지` do fire: they were measured and every sampled one was a
+  genuine correction, so the guard this spec first proposed for them was
+  dropped.
 - **C2 single source.** The miner detects exactly what the hook detects: for a
   sample spanning all families, `bootstrap.is_correction` and
   `trigger.detect_correction` agree on every input.
@@ -212,6 +305,8 @@ Propositions, each one a test:
   entry still yields none.
 - **C4 end to end.** A synthetic transcript carrying one correction of each
   family produces a digest naming all of them.
+- **C5 breadth.** Every measured family has a quoted example in the `SKILL.md`
+  `description:` that the hook's table attributes to that family.
 
 ## Out of scope
 
