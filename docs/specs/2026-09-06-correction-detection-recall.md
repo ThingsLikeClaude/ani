@@ -1,0 +1,235 @@
+# Correction detection — recall, one table, and the way in
+
+Status: design, approved 2026-09-06. Implements nothing yet.
+
+## Why
+
+ani's entry point is a detector. `hooks/ani_trigger.py` reads each prompt, looks
+for a correction phrase, and emits `[ani-nudge v1]` so the agent enters Path B.
+`scripts/ani_bootstrap.py` runs the same idea over past transcripts. Everything
+downstream — the F file, `recurrence`, the evidence score E, the compiled S —
+starts there. Nothing reaches the store that the detector did not first notice.
+
+The detector was measured on 2026-09-06 and it notices almost nothing.
+
+### The measurement
+
+**Ground truth.** Eleven F files in the user's global store each carry a
+`trigger_quote`: the user turn that an agent, in a live session, judged to be a
+correction. That is eleven known positives, labelled by the system itself.
+
+Running `ani_trigger.detect_correction` over those eleven quotes:
+
+| | |
+| --- | --- |
+| Detected | 1 |
+| Missed | 10 |
+| **Recall** | **9%** |
+
+**Frequency.** Over the same five-day window, 227 transcript files, 1,585 human
+prose turns (317/day):
+
+| Signal | Turns | Rate |
+| --- | --- | --- |
+| Current detector (19 regexes) | 10 | 2.0/day |
+| Sentence-initial `아니` | 26 | 5.2/day |
+| Defect report (`안 되는데`, `작동 안`) | 24 | 4.8/day |
+| Negative verdict (`슬롭`, `이상해`, `별로`, `촌스`) | 23 | 4.6/day |
+| Stated recurrence (`여러번`, `또 그러`, `전에도 말했`) | 3 | 0.6/day |
+| Reversal (`다시 생각`, `안 쓰게`, `없던 걸로`) | 2 | 0.4/day |
+
+The detector fires 2/day against roughly 12/day of real correction turns.
+
+### What the misses look like
+
+Ten missed quotes, grouped:
+
+```
+아니 그냥 html 로 만들어서 열어                    문두 "아니" + 지시
+아니 근데 ... 사용하고있는거아니었어?               문두 "아니" + 반문
+아니 이거 중앙으로 바꿔줘                          문두 "아니" + 지시
+아니 너가 직접 개발서버 띄워서 알려줘               문두 "아니" + 지시
+(여러번 지적함, 특히 책상같은거)                    재발 명시
+내가 상세페이지에서 겪었던 슬롭임                   재발 명시 + 부정판정
+... AI 슬롭같아 ... 다시해봐                        부정판정 + 재작업
+프런트가 안되는데?                                 결함보고
+굉장히 짧고 간결하게 눌러서 써야돼                  의무형 지시
+3456은 다시생각해보니까 안쓰게될거같아              번복
+```
+
+Five of eleven open with a bare sentence-initial `아니`. The current table
+requires `아니` followed by a specific continuation (`그게 아니라`,
+`그런 뜻이`), which this user almost never says. The single highest-value family
+— a user stating outright that they have said this before — has no entry at all,
+even though it is the one signal that proves recurrence without inference.
+
+### The chain
+
+```
+recall 9%
+  → the nudge fires on 2 turns/day of ~12
+  → the agent often never enters Path B
+  → no F is written, or a duplicate opens instead of incrementing recurrence
+  → E is never computed for that class
+  → nothing crosses T=5
+  → F files sit `captured`               ← "쌓이기만 하고 안 굳는다"
+  → the store holds 2 S after five days  ← "주입돼도 행동이 안 바뀐다"
+```
+
+The store's own numbers match: 11 F, 9 of them `captured`, 2 S, over five days.
+
+### What this is not
+
+Two things were suspected and measured out:
+
+- **The context budget is not the problem.** Only S rows are injected
+  (`STATUS_PRIORITY = ("active", "provisional")`). The resident cost today is
+  515 bytes — 8% of the 6 KiB injection budget, about 140 tokens — with room for
+  roughly 21 more S rows. F rows live in the INDEX file but never enter context.
+- **The layers are not merged.** Matching already happens on demand:
+  `ani_trigger` reads the INDEX from disk on every prompt and emits at most
+  three ids (`MAX_HINT_PATTERNS = 3`). The corpus/index/resident separation that
+  looked missing is largely already there.
+
+## Invariants
+
+1. **The hook nudges; the agent judges.** Widening detection buys recall, and
+   precision stays where it already lives — Path B's RESTATE step, which makes
+   the agent state what it thinks the correction is before writing anything. A
+   nudge is never a capture.
+2. **One table, two readers.** The hook and the miner detect the same thing, so
+   they read the same list. Divergence is how a fix lands in one and not the
+   other.
+3. **Detection never blocks.** A prompt that matches nothing proceeds unchanged;
+   a prompt that matches is still just a prompt with a marker appended.
+4. **No new store writes.** This changes what is noticed, not what is written or
+   where. F and S schemas are untouched.
+5. **A widened net is measured, not assumed.** Every family added carries its
+   measured rate, and the spec states the false-positive cost it accepts.
+
+## The changes
+
+### C1. Detection vocabulary, rebuilt from observed speech
+
+The table is rebuilt around the five families the measurement found. Each entry
+keeps a slug, as today, so a hit is attributable.
+
+**Family A — sentence-initial `아니`.** Anchored to the start of the prompt and
+required not to continue into a word: `아니라`, `아니면`, `아닌`, `아니야` are
+ordinary Korean and must not fire. Measured 5.2/day.
+
+**Family B — stated recurrence.** `여러번`, `또 그러`, `아까도`, and
+`(전에도|계속) (말|얘기|지적)`. Measured 0.6/day. The rarest family and the most
+valuable: the user is saying the recurrence out loud, which is exactly what
+`recurrence` exists to count.
+
+**Family C — defect report.** `안 되는데`, `안 됨`, `작동 안`. Measured 4.8/day.
+
+**Family D — negative verdict.** `슬롭`, `이상해`, `별로야`, `촌스`, `구려`.
+Measured 4.6/day. This family is the most user-specific in the list and the most
+likely to need tuning for another user; it is kept because two of the eleven
+ground-truth quotes are nothing but this.
+
+**Family E — reversal.** `다시 생각`, `안 쓰게`, `없던 걸로`. Measured 0.4/day.
+
+English and Japanese and Chinese entries are kept as they are. They were not
+measured — this user's corpus is Korean — and removing unmeasured entries would
+be a change with no evidence behind it.
+
+**Accepted false-positive cost.** Roughly 12 nudges/day against 317 turns/day:
+under 4% of turns carry a marker. A false nudge costs one line of injected text
+and an agent that reads it, finds nothing to correct, and moves on. Invariant 1
+is what makes that cheap. The families are ordered so the most specific matches
+first, and the emitted slug says which family fired, so a family that proves
+noisy in practice can be removed on evidence rather than on taste.
+
+### C2. One table, two readers
+
+`hooks/ani_trigger.py` owns the canonical table. `scripts/ani_bootstrap.py`
+imports it rather than keeping its own.
+
+Today there are two, and they disagree:
+
+| | Location | Matching | Entries |
+| --- | --- | --- | --- |
+| Hook | `ani_trigger.CORRECTION_PHRASES` | compiled regex | 19 |
+| Miner | `ani_bootstrap.CORRECTION_PHRASES` | literal substring, language-aware | 14 |
+
+The hook's form wins: sentence-initial anchoring (Family A) needs a regex, and a
+literal substring table cannot express it. The miner already imports nothing from
+`hooks/`, but the precedent exists — `scripts/ani_doctor.py` imports
+`ani_trigger` — so the import direction is established.
+
+`POSITIVE_ACK_PHRASES` stays in the miner and is out of scope. It feeds the
+miner's retro hint, not the live path, and it was not measured.
+
+### C3. `no_agent_context`, relaxed to what it meant
+
+`collect_moments` drops a correction with no preceding assistant turn. The
+reason is sound: the opening turn of a headless run can carry a trigger phrase,
+and mining it lets noise buy itself a `+2`.
+
+The implementation is wider than the reason. `scan_file` only appends entries
+that produce prose (`extract_text` returns `""` for a message of tool_use blocks
+alone), so an assistant turn that was nothing but tool calls is absent from
+`messages` entirely. A user correcting an agent mid-tool-work can therefore look
+like an opening turn.
+
+The rescue: an assistant **entry** counts as context even when it carries no
+prose. The quote and the stored `assistant_context` still come from prose, so a
+tool-only turn contributes presence, not text. A correction that is genuinely
+the first thing in a transcript is still dropped, which is the case the filter
+was written for.
+
+### C4. The way in, end to end
+
+The chain in Why is a claim about how the pieces connect, and no test covers it.
+One end-to-end test walks it on a synthetic transcript: a correction turn is
+detected, becomes a moment, survives clustering, and appears in the digest with
+its slug. That is the miner's half, which is the half that is code.
+
+The live half — nudge to Path B to F to E to S — is agent behaviour and stays
+prose. What can be pinned is that the nudge fires: given a prompt from each
+family, the hook emits `[ani-nudge v1]` with the expected slug.
+
+## Testing
+
+Propositions, each one a test:
+
+- **C1 recall.** The eleven ground-truth quotes in this spec are a fixture. The
+  rebuilt table detects at least ten of them. (The eleventh, `굉장히 짧고
+  간결하게 눌러서 써야돼`, is a bare directive with no correction marker; it is
+  named here as a known miss rather than chased with a rule that would fire on
+  every instruction the user gives.)
+- **C1 precision guards.** `아니라`, `아니면`, `아닌데`, `아니야` at the start of
+  a prompt do not fire Family A. A prompt with `아니` in the middle of a sentence
+  does not fire it either.
+- **C2 single source.** The miner detects exactly what the hook detects: for a
+  sample spanning all families, `bootstrap.is_correction` and
+  `trigger.detect_correction` agree on every input.
+- **C3 rescue.** A transcript whose only assistant entry before the correction is
+  a tool-use message yields a moment. A transcript whose correction is the first
+  entry still yields none.
+- **C4 end to end.** A synthetic transcript carrying one correction of each
+  family produces a digest naming all of them.
+
+## Out of scope
+
+- **The context budget and the three-layer split.** Measured and found sound; see
+  "What this is not".
+- **`POSITIVE_ACK_PHRASES`.** Unmeasured, and it feeds the miner's advisory hint
+  rather than the live path.
+- **The promotion arithmetic.** E and T are agent judgment specified in
+  `SKILL.md`; this spec changes what reaches that judgment, not the judgment.
+- **Per-user tuning.** Family D is this user's vocabulary. A configurable table
+  is a real idea and a separate one.
+
+## Known limits
+
+- Family D is the least portable entry in the table. Another user who never says
+  `슬롭` loses nothing, but also gains nothing from it.
+- A bare directive with no correction marker (`굉장히 짧고 간결하게 써야돼`)
+  stays invisible. Catching it means firing on ordinary instructions, and the
+  cost of that is a store full of things the user simply asked for.
+- The measured rates come from one user's five days. They are the best evidence
+  available and they are not a general claim about Korean.
