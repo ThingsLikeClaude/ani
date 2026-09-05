@@ -49,6 +49,14 @@ try:
     sys.dont_write_bytecode = True
     sys.path.insert(0, _HOOK_DIR)
     import ani_trigger  # noqa: E402
+except ImportError as exc:  # pragma: no cover - a broken install
+    # Falling back to a local copy of the table would be the two-table bug this
+    # import exists to remove, so the miner refuses to run instead.
+    raise SystemExit(
+        "ani_bootstrap: cannot import the correction table from %s (%s). "
+        "hooks/ani_trigger.py ships beside this script and owns it."
+        % (_HOOK_DIR, exc)
+    )
 finally:
     try:
         sys.path.remove(_HOOK_DIR)
