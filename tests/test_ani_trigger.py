@@ -577,6 +577,47 @@ class StatedRecurrenceBoundaryTests(unittest.TestCase):
                 slug = self.detect(prompt)
                 self.assertIsNone(slug, "%r fired %s" % (prompt, slug))
 
+    def test_the_speech_verb_has_to_be_speech_that_already_happened(self):
+        """`말` is not a speech verb — it is two thirds of one, and also all of
+        말고 ("instead of").
+
+        Matched as a bare one-syllable prefix, the guard that was supposed to
+        turn 여러번/계속 from a frequency adverb into a complaint about
+        repetition catches 말고 and every present-tense 말하다 as well, which
+        puts an ordinary request back inside the family. One of the 55 fires
+        measured in the five-day window is exactly that: `ko-recur-jeonedo` on
+        "…수정사항을 계속 말하면서 잡아야하니?", a question about workflow.
+
+        Family B is the rarest family (0.6/day) and the one the spec calls the
+        single signal that proves `recurrence` without inference, so a false
+        positive costs more here than anywhere else in the table. What makes a
+        complaint a complaint is that the saying already happened: 말했, 지적함,
+        얘기했, 말씀. `references/triggers.md` has described the family that way
+        all along.
+        """
+        for prompt in (
+            "이 폴더는 건드리지 말라고 여러번 말했잖아",
+            "여러 번 지적함, 특히 책상 같은 거",
+            "전에도 얘기했는데 또 이런 식이네",
+            "계속 지적했는데 하나도 안 고쳐졌어",
+            "여러번 말씀드렸잖아요",
+        ):
+            with self.subTest(fires=prompt):
+                slug = self.detect(prompt)
+                self.assertIsNotNone(slug, "%r was not detected" % prompt)
+                self.assertTrue(
+                    slug.startswith(FAMILY_SLUG_PREFIXES["B"]), slug
+                )
+        for prompt in (
+            "여러 번 말고 한 번에 처리해줘",
+            "이거 계속 말고 다른 방법 찾아줘",
+            "계속 말해줘 재밌다",
+            "수정사항을 계속 말하면서 잡아야하니?",
+        ):
+            with self.subTest(silent=prompt):
+                slug = self.detect(prompt)
+                self.assertIsNone(slug, "%r fired %s" % (prompt, slug))
+
 
 class NegativeVerdictBoundaryTests(unittest.TestCase):
     """C1 precision, Family D: 4.6/day, and until now fire tests only.

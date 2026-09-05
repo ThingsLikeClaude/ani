@@ -140,11 +140,17 @@ takes `ko-ani-muntu`; a hit on either specific phrase is still attributable to
 Family A, which is what the prefix is for.
 
 **Family B — stated recurrence.** `여러번`, `또 그러`, `아까도`, and
-`(전에도|계속) (말|얘기|지적)`. Measured 0.6/day. The rarest family and the most
+`(전에도|계속) (말|얘기|지적)(했|함|하셨|하잖|씀)`. Measured 0.6/day. The rarest
+family and the most
 valuable: the user is saying the recurrence out loud, which is exactly what
 `recurrence` exists to count. `여러번` alone is an ordinary frequency adverb —
 `여러번 실행해줘` is a request, not a complaint — so it fires only when paired
-with a speech verb, the same `말|얘기|지적` that `전에도`/`계속` carry; `아까도`
+with a speech verb, the same `말|얘기|지적` that `전에도`/`계속` carry. A bare
+one-syllable `말|얘기|지적` does not discriminate, though: `말` is also all of
+`말고` and the front of every present-tense `말하다`, so `여러 번 말고 한 번에`
+and `계속 말하면서 잡아야하니?` both landed in the family — one of them a real
+fire in the measured window. The saying has to have already happened, which is
+how `references/triggers.md` described the family from the start; `아까도`
 stays bare, since nothing measured disproves it. `왜 자꾸` and `또 그러네`,
 which the old table carried loose, are complaints about repetition and so belong
 here: both were re-slugged into `ko-recur-`, and the second widened to

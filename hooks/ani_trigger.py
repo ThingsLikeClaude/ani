@@ -147,8 +147,15 @@ CORRECTION_PHRASES = (
     # ordinary frequency adverb, so it must be paired with a speech verb — a
     # request to run something several times is not a complaint that something
     # was said several times.
-    ("ko-recur-yeoreobeon", r"여러\s*번\s*(?:말|얘기|지적)"),
-    ("ko-recur-jeonedo", r"(?:전에도|계속)\s*(?:말|얘기|지적)"),
+    #
+    # A bare one-syllable 말|얘기|지적 does not do that job: 말 is also all of
+    # 말고 ("instead of") and the front of every present-tense 말하다, so
+    # "여러 번 말고 한 번에" and "계속 말하면서 잡아야하니?" landed in the
+    # rarest family in the table. What makes a complaint a complaint is that
+    # the saying already happened, which is how references/triggers.md has
+    # always described the family: 말했 / 지적함 / 얘기했 / 말씀.
+    ("ko-recur-yeoreobeon", r"여러\s*번\s*(?:말|얘기|지적)\s*(?:했|함|하셨|하잖|씀)"),
+    ("ko-recur-jeonedo", r"(?:전에도|계속)\s*(?:말|얘기|지적)\s*(?:했|함|하셨|하잖|씀)"),
     ("ko-recur-akkado", r"아까도"),
     ("ko-recur-wae-jakku", r"왜\s*자꾸"),
     ("ko-recur-tto-geureo", r"또\s*그러"),
