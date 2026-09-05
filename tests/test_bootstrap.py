@@ -848,23 +848,74 @@ class TestOneTableTwoReaders(unittest.TestCase):
         self.assertEqual(list(miner_table), list(self.hook.CORRECTION_PHRASES))
 
 
+# ---------------------------------------------------------------------------
+# The forms a user actually types
+#
+# Every entry in the canonical table joins its pieces with an optional
+# whitespace class (`\s*`, `[\s,]*`). Korean is agglutinative and this user
+# types the joint closed: `안됨`, not `안 됨`. The token that reaches the
+# clusterer is therefore the *collapsed* form with an ending welded onto it,
+# which is a different string from every piece the regex is written in.
+#
+# These are measured, not invented: `그게아니라` and `다시생각해보니까` /
+# `안쓰게될거같아` are verbatim from ground-truth quotes #1 and #10, and
+# `슬롭임` from #8. Each pairs a real prompt with the token that must not
+# survive `tokenize` and go on to name a cluster.
+# ---------------------------------------------------------------------------
+TYPED_TRIGGER_TOKENS = (
+    ("이거 진짜 안됨 다시 고쳐줘", "안됨"),
+    ("3456은 다시생각해보니까 일단 안쓰게될거같아", "다시생각해보니까"),
+    ("3456은 다시생각해보니까 일단 안쓰게될거같아", "안쓰게될거같아"),
+    ("아니 그게아니라 배경색만 바꾸라고", "그게아니라"),
+    ("작동안하는데 확인좀 해줘", "작동안하는데"),
+    ("왜자꾸 같은 실수를 해", "왜자꾸"),
+    ("또그러네 진짜", "또그러네"),
+    ("신청 완료 저거 도장 내가 상세페이지에서 겪었던 슬롭임", "슬롭임"),
+)
+
+# Regex scaffolding that stands between the author's source and the user's
+# keystrokes. Stripping the first two and collapsing the third is what turns
+# `안\s*됨` back into the `안됨` somebody typed.
+_LOOKAROUND_RE = re.compile(r"\(\?<?[=!][^()]*\)")
+_JOINT_RE = re.compile(r"\\s[*+?]|\[[^\]]*\\s[^\]]*\][*+?]")
+_ALTERNATION_RE = re.compile(r"\(\?:([^()]+)\)")
+
+
+def expand_alternations(pattern):
+    """`(?:a|b)x` -> ['ax', 'bx'] — one branch per phrase the entry can match."""
+    match = _ALTERNATION_RE.search(pattern)
+    if not match:
+        return [pattern]
+    branches = []
+    for choice in match.group(1).split("|"):
+        branches.extend(expand_alternations(
+            pattern[: match.start()] + choice + pattern[match.end():]
+        ))
+    return branches
+
+
 class TestTriggerVocabularyNeverBecomesAKeyword(unittest.TestCase):
     """A cluster must not be named after the phrase that caught it.
 
-    `tokenize` drops trigger vocabulary via `STOPWORDS` so that a cluster of
-    corrections about background colour is called `배경색` and not `아니라고`.
-    The keyword coverage that exists today names three fragments of the old
-    table by hand (`아니`, `아니라`, `그게`), which means the list and the table
-    are joined by nothing at all: every family the table gains arrives with new
-    trigger words that leak straight into cluster keywords, and no test moves.
+    `tokenize` drops trigger vocabulary so that a cluster of corrections about
+    background colour is called `배경색` and not `아니라고`. The failure this
+    class exists to catch is not abstract: two unrelated corrections sharing
+    nothing but the word `안됨` cluster at Jaccard 1/3, and the digest then
+    tells the agent to seed a pattern's `keywords` from a word that describes
+    nothing, and to read two moments as a recurrence that never happened.
 
-    The honest invariant is not "every regex source string is in STOPWORDS" —
-    regexes are not words, and `^아니(?!면)` is not a word anybody typed. It is
-    this: take the literal Korean the table matches on, hand it to the miner's
-    own tokenizer, and nothing may come back. Whether a word is covered
-    directly, as a particle-stripped stem, or by the length floor is the
-    tokenizer's business; the requirement is only that no trigger word can
-    survive it and go on to name a cluster.
+    The invariant pinned here is *not* "every Hangul run in the regex source is
+    a stopword". A regex is not something anybody typed: `안\\s*됨` splits into
+    two single syllables that fall under the tokenizer's own length floor, so
+    that reading tests nothing while looking like it tests everything. The
+    honest invariant reads the table the way a keyboard does — collapse the
+    optional joints, expand the alternations, take what is left — and requires
+    that the resulting word, and the same word with a Korean ending attached,
+    both come back from `tokenize` as nothing.
+
+    The derivation is written out here as well as in the miner on purpose: a
+    miner whose derivation silently narrowed would still satisfy a test that
+    asked the miner what to check.
     """
 
     @classmethod
@@ -872,33 +923,58 @@ class TestTriggerVocabularyNeverBecomesAKeyword(unittest.TestCase):
         cls.miner = load_script_module()
         cls.hook = load_hook_module()
 
-    def korean_literals_in_the_table(self):
-        """Every run of Hangul the canonical table matches on, ≥2 syllables.
+    def surface_forms_the_table_matches(self):
+        """Every whitespace-free Hangul form the canonical table can match.
 
-        Regex metacharacters, lookarounds and the `[가-힣]` class all reduce to
-        runs of one syllable or none, so they contribute nothing. The hook's
-        table is the source because it is the canonical one (C2) — after the
-        miner imports it, this reads the same list either way.
+        The hook's table is the source because it is the canonical one (C2);
+        after the miner imports it, this reads the same list either way.
         """
-        words = set()
+        forms = set()
         for _slug, pattern in self.hook.CORRECTION_PHRASES:
-            for run in re.findall(r"[가-힣]+", pattern):
-                if len(run) >= 2:
-                    words.add(run)
-        return sorted(words)
+            body = _JOINT_RE.sub("", _LOOKAROUND_RE.sub("", pattern))
+            for branch in expand_alternations(body):
+                for run in re.findall(r"[가-힣]+", branch):
+                    if len(run) >= 2:
+                        forms.add(run)
+        return sorted(forms)
 
-    def test_every_korean_word_the_phrase_table_matches_on_is_a_stopword(self):
-        words = self.korean_literals_in_the_table()
+    def test_the_derivation_reads_the_typed_form_and_not_the_regex_source(self):
+        """Guards the guard.
+
+        A derivation that reads regex source cannot produce any of these, and
+        every one of them is a word this user types.
+        """
+        forms = set(self.surface_forms_the_table_matches())
         self.assertGreaterEqual(
-            len(words), 10,
-            "only %d Korean literal(s) found in the table — the extraction is "
-            "reading the wrong thing, and this test would pass vacuously"
-            % len(words),
+            len(forms), 20,
+            "only %d surface form(s) derived — the extraction is reading the "
+            "wrong thing and every assertion below would pass vacuously"
+            % len(forms),
         )
+        source_runs = set()
+        for _slug, pattern in self.hook.CORRECTION_PHRASES:
+            source_runs.update(re.findall(r"[가-힣]+", pattern))
+        collapsed_only = sorted(forms - source_runs)
+        self.assertGreaterEqual(
+            len(collapsed_only), 8,
+            "only %d of the %d derived forms are joint-collapsed forms the "
+            "regex source does not literally contain: %s"
+            % (len(collapsed_only), len(forms), collapsed_only),
+        )
+        for form in ("안됨", "그게아니라", "다시생각", "안쓰게", "왜자꾸", "또그러"):
+            with self.subTest(form=form):
+                self.assertIn(
+                    form, forms,
+                    "%r is what the user types and the derivation did not "
+                    "produce it" % form,
+                )
+
+    def test_every_surface_form_the_table_matches_is_dropped_by_the_tokenizer(self):
+        forms = self.surface_forms_the_table_matches()
         leaked = [
-            "%s -> %s" % (word, sorted(self.miner.tokenize(word)))
-            for word in words
-            if self.miner.tokenize(word)
+            "%s -> %s" % (form, sorted(self.miner.tokenize(form)))
+            for form in forms
+            if self.miner.tokenize(form)
         ]
         self.assertEqual(
             leaked,
@@ -906,6 +982,52 @@ class TestTriggerVocabularyNeverBecomesAKeyword(unittest.TestCase):
             "%d trigger word(s) survive tokenisation and can name a cluster:"
             "\n  %s" % (len(leaked), "\n  ".join(leaked)),
         )
+
+    def test_a_trigger_word_carrying_a_korean_ending_is_still_a_trigger_word(self):
+        """`다시생각` is in the table; `다시생각해보니까` is what was typed.
+
+        An exact-membership stopword list answers the first and not the second,
+        and the second is the one that reaches the clusterer.
+        """
+        for prompt, token in TYPED_TRIGGER_TOKENS:
+            with self.subTest(token=token):
+                survivors = self.miner.tokenize(prompt)
+                self.assertNotIn(
+                    token, survivors,
+                    "%r survived tokenisation of %r -> %s"
+                    % (token, prompt, sorted(survivors)),
+                )
+
+
+class TestTriggerWordCannotBindACluster(BootstrapTestCase):
+    """The end of the chain F1 describes, walked on a transcript.
+
+    Two corrections about entirely different things, sharing one word — the
+    word that caught them. If that word survives tokenisation it is the whole
+    of their overlap (1/3, over the 0.30 threshold), they cluster, and the
+    digest reports a 2-member cluster: the `+2` repetition signal in the
+    agent's evidence score, manufactured out of the detector's own vocabulary.
+    """
+
+    def test_two_corrections_sharing_only_the_trigger_word_do_not_cluster(self):
+        write_transcript(self.tmp / "projects" / "phantom" / "s.jsonl", [
+            make_entry("assistant", "로그인 화면을 다시 배포했습니다", iso_days_ago(1)),
+            make_entry("user", "로그인 안됨", iso_days_ago(1)),
+            make_entry("assistant", "차트 렌더러를 교체했습니다", iso_days_ago(1)),
+            make_entry("user", "차트 안됨", iso_days_ago(1)),
+        ])
+        digest = self.digest_of()
+        self.assertEqual(stat_value(digest, "Correction moments found"), 2)
+        self.assertEqual(
+            stat_value(digest, "Clusters formed"), 2,
+            "two unrelated corrections were bound into one cluster:\n%s" % digest,
+        )
+        for line in re.findall(r"- Suggested keywords: (.+)", digest):
+            with self.subTest(keywords=line):
+                self.assertNotIn(
+                    "안됨", [k.strip() for k in line.split(",")],
+                    "the trigger word became a cluster keyword",
+                )
 
 
 class TestToolOnlyAgentContext(BootstrapTestCase):

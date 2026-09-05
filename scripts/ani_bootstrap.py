@@ -89,36 +89,111 @@ POSITIVE_ACK_PHRASES = [
     ("that works", "en"),
 ]
 
-# Trigger words themselves must not become cluster keywords: a cluster of
-# corrections about background colour is called 배경색, never 아니라고. The
-# Korean half below is the vocabulary CORRECTION_PHRASES matches on, so it has
-# to be extended in the same edit that extends the table — tests/test_bootstrap
-# .py pins exactly that, by running every Hangul literal in the table through
-# `tokenize` and requiring nothing back.
+# Words that name nothing. The Korean trigger vocabulary is NOT listed here —
+# it is derived from the table below, because a hand-kept list beside the table
+# is joined to it by nothing at all and every family the table gains arrives
+# with new trigger words that leak straight into cluster keywords.
 STOPWORDS = {
-    # Korean — Family A and the unanchored 아니 phrases
-    "아니", "아니라", "아니라고", "그게", "그거", "말고", "말은", "뜻이었",
-    "뜻이었어", "라는", "뜻이", "그런",
-    # Family B — stated recurrence
-    "여러", "여러번", "얘기", "지적", "전에도", "계속", "아까도", "자꾸",
-    "그러", "그러네",
-    # Family C — defect report
-    "되는데", "안되는데", "작동",
-    # Family D — negative verdict
-    "슬롭", "이상해", "별로야", "촌스", "구려",
-    # Family E — reversal
-    "다시", "생각", "쓰게", "안쓰게", "없던", "걸로",
     # Korean — very common filler that names nothing
     "이거", "저거", "이건", "저건", "해줘", "해라", "하라고", "그리고",
     "근데", "그냥", "진짜", "지금", "그대로", "이렇게", "저렇게", "여기",
     "거기",
-    # English — trigger fragments plus stopwords
+    # English — trigger fragments plus stopwords. The derivation below reads
+    # Hangul only, so the English half of the table is still covered by hand;
+    # English is not agglutinative and its entries are already word-bounded.
     "no", "not", "that", "thats", "what", "meant", "asked", "misunderstood",
     "you", "your", "the", "an", "is", "are", "was", "were", "be", "to", "of",
     "and", "or", "in", "on", "at", "for", "with", "this", "these", "those",
     "it", "its", "do", "did", "does", "my", "me", "but", "so", "just", "only",
     "should", "would", "could", "please", "can", "will", "have", "has",
 }
+
+# --------------------------------------------------------------------------
+# Trigger vocabulary, derived from the table it must shadow
+# --------------------------------------------------------------------------
+# A cluster of corrections about background colour is called 배경색, never
+# 아니라고: the phrase that caught a moment must never be the word that names
+# it. Two moments whose only shared token is the trigger word cluster at
+# Jaccard 1/3 — over the 0.30 threshold — and the digest then reports a
+# recurrence that never happened and tells the agent to seed `keywords` from a
+# word that describes nothing.
+#
+# The derivation reads the table the way a keyboard does, not the way its
+# author wrote it. Every entry joins its pieces with an optional whitespace
+# class, and Korean is agglutinative: what the user types is `안됨`, one token,
+# not the two single syllables `안\s*됨` splits into. So lookarounds are
+# dropped, alternations are expanded into branches, and every run of syllables
+# a branch can produce with its joints typed closed is a form to shadow —
+# `안됨`, `그게아니라`, `여러번말했`.
+#
+# Endings then attach to those forms (`다시생각` -> `다시생각해보니까`), and no
+# membership test can enumerate Korean endings, so the match is by prefix: a
+# token that starts with a trigger form is that trigger word wearing one.
+_LOOKAROUND_RE = re.compile(r"\(\?<?[=!][^()]*\)")
+_JOINT_RE = re.compile(r"\\s[*+?]|\[[^\]]*\\s[^\]]*\][*+?]")
+_ALTERNATION_RE = re.compile(r"\(\?:([^()]+)\)")
+_JOINT_MARK = "\x00"
+
+
+def _expand_alternations(pattern: str) -> list:
+    """``(?:a|b)x`` -> ``['ax', 'bx']``: one branch per phrase the entry matches."""
+    match = _ALTERNATION_RE.search(pattern)
+    if not match:
+        return [pattern]
+    branches = []
+    for choice in match.group(1).split("|"):
+        branches.extend(
+            _expand_alternations(
+                pattern[: match.start()] + choice + pattern[match.end():]
+            )
+        )
+    return branches
+
+
+def _surface_forms(pattern: str) -> set:
+    """Every Hangul run of >= 2 syllables one table entry can match.
+
+    A joint may be typed as a space or not typed at all, so both readings
+    count: ``여러\\s*번\\s*말했`` yields 여러번, 번말했, 여러번말했 and the
+    pieces themselves. Anything that is neither Hangul nor a joint is regex
+    scaffolding and breaks the phrase outright.
+    """
+    forms = set()
+    body = _JOINT_RE.sub(_JOINT_MARK, _LOOKAROUND_RE.sub("", pattern))
+    for branch in _expand_alternations(body):
+        for piece in re.split("[^가-힣" + _JOINT_MARK + "]+", branch):
+            chunks = [chunk for chunk in piece.split(_JOINT_MARK) if chunk]
+            for start in range(len(chunks)):
+                for stop in range(start + 1, len(chunks) + 1):
+                    form = "".join(chunks[start:stop])
+                    if len(form) >= 2:
+                        forms.add(form)
+    return forms
+
+
+TRIGGER_SURFACE_FORMS = frozenset(
+    form
+    for _slug, _pattern in CORRECTION_PHRASES
+    for form in _surface_forms(_pattern)
+)
+
+# Prefix lookup bucketed by length: a handful of sizes, one set membership each.
+_TRIGGER_PREFIXES = tuple(
+    (size, frozenset(f for f in TRIGGER_SURFACE_FORMS if len(f) == size))
+    for size in sorted({len(f) for f in TRIGGER_SURFACE_FORMS})
+)
+
+
+def is_trigger_vocabulary(token: str) -> bool:
+    """True when this token is a word the correction table matches on."""
+    if token in STOPWORDS:
+        return True
+    for size, forms in _TRIGGER_PREFIXES:
+        if len(token) < size:
+            return False
+        if token[:size] in forms:
+            return True
+    return False
 
 # Single-char Korean particles stripped from tokens of length >= 3 (stem >= 2).
 # This is the one place the miner does more than the letter of the spec: without
@@ -272,10 +347,10 @@ def tokenize(text: str) -> set:
     """Correction quote -> keyword token set used for clustering."""
     tokens = set()
     for raw in normalize_for_match(text).split():
-        if len(raw) < 2 or raw in STOPWORDS:
+        if len(raw) < 2 or is_trigger_vocabulary(raw):
             continue
         tok = _strip_particle(raw)
-        if len(tok) < 2 or tok in STOPWORDS:
+        if len(tok) < 2 or is_trigger_vocabulary(tok):
             continue
         tokens.add(tok)
     return tokens
