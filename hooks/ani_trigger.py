@@ -103,21 +103,77 @@ HINT_SENTENCE = (
     "before acting."
 )
 
-# Canonical correction phrases. Ordered most-specific first: the first match
-# wins and supplies ``pattern=<slug>``. These are hints, not the protocol —
-# semantic recognition by the model (P5) remains the real matcher.
+# Canonical correction phrases — the one table (spec C2). ``scripts/
+# ani_bootstrap.py`` imports this list rather than keeping a second one, so a
+# phrase added for the live nudge reaches the miner in the same edit.
+#
+# Rebuilt 2026-09-06 from measurement, not from taste: the previous table was
+# scored against the eleven ``trigger_quote`` values the store itself had
+# labelled as corrections and found one of them (9% recall). The Korean
+# entries below are the five families that measurement found, each carrying
+# its observed rate, with the slug prefix that makes a hit attributable —
+# a family that proves noisy can then be dropped on evidence.
+#
+# Ordered most-specific first: the first match wins and supplies
+# ``pattern=<slug>``. These are hints, not the protocol — semantic recognition
+# by the model (P5) remains the real matcher, and precision lives downstream in
+# Path B's RESTATE step, which is what makes a wide net cheap here.
 CORRECTION_PHRASES = (
-    # Korean
+    # --- Korean -----------------------------------------------------------
+    # Family A - sentence-initial 아니 (5.2/day). Five of the eleven labelled
+    # corrections open with it. The two-phrase forms come first so a hit names
+    # the sharper phrase; the bare interjection is anchored to the start of the
+    # prompt because mid-sentence 아니 corrects the user's own words, not the
+    # agent's work.
     ("ko-ani-geuge-anira", r"아니[\s,]*그게\s*아니라"),
     ("ko-ani-geureon-tteusi", r"아니[\s,]*그런\s*뜻이"),
+    # The only exclusion is 아니면: a conjunction proposing an alternative
+    # ("아니면 버셀 배포할까???"), and the one false positive anybody measured.
+    # 아니야 / 아니요 / 아니지 opened four sentences in the window and every
+    # sampled one was a genuine correction, so no ending is guarded, and
+    # nothing keys on sentence mood — ground-truth quote #5 is a question and
+    # a genuine correction. The discriminator is word class.
+    ("ko-ani-muntu", r"^\s*아니(?!면)"),
+    # Korean corrections that need no opening 아니.
     ("ko-geuge-anira", r"그게\s*아니라"),
     ("ko-anirago", r"아니라고"),
     ("ko-geugeo-malgo", r"그거\s*말고"),
     ("ko-raneun-tteusieosseo", r"(?:라는|란)\s*뜻이었"),
     ("ko-nae-mareun", r"내\s*말은"),
-    ("ko-wae-jakku", r"왜\s*자꾸"),
-    ("ko-tto-geureone", r"또\s*그러네"),
-    # English (case-insensitive)
+    # Family B - stated recurrence (0.6/day). The rarest family and the most
+    # valuable: the user is saying the recurrence out loud, which is the one
+    # signal that proves ``recurrence`` without inference. 여러번 alone is an
+    # ordinary frequency adverb, so it must be paired with a speech verb — a
+    # request to run something several times is not a complaint that something
+    # was said several times.
+    ("ko-recur-yeoreobeon", r"여러\s*번\s*(?:말|얘기|지적)"),
+    ("ko-recur-jeonedo", r"(?:전에도|계속)\s*(?:말|얘기|지적)"),
+    ("ko-recur-akkado", r"아까도"),
+    ("ko-recur-wae-jakku", r"왜\s*자꾸"),
+    ("ko-recur-tto-geureo", r"또\s*그러"),
+    # Family C - defect report (4.8/day). The user reports the symptom instead
+    # of naming the mistake: "프런트가 안되는데?".
+    ("ko-defect-an-doeneunde", r"안\s*되는데"),
+    ("ko-defect-an-doem", r"안\s*됨"),
+    ("ko-defect-jakdong-an", r"작동\s*안"),
+    # Family D - negative verdict (4.6/day). The most user-specific family in
+    # the table and the first candidate for per-user tuning, kept because two
+    # of the eleven labelled corrections are nothing but this. 별로 on its own
+    # is a degree adverb ("별로 안 급해"), so only the predicate 별로야 fires.
+    ("ko-verdict-seullop", r"슬롭"),
+    ("ko-verdict-isanghae", r"이상해"),
+    ("ko-verdict-byeolloya", r"별로야"),
+    ("ko-verdict-chonseu", r"촌스"),
+    ("ko-verdict-guryeo", r"구려"),
+    # Family E - reversal (0.4/day). The user withdraws something they asked
+    # for: "3456은 다시생각해보니까 일단 안쓰게될거같아".
+    ("ko-reversal-dasi-saenggak", r"다시\s*생각"),
+    ("ko-reversal-an-sseuge", r"안\s*쓰게"),
+    ("ko-reversal-eopdeon-geollo", r"없던\s*걸로"),
+    # --- English (case-insensitive) ---------------------------------------
+    # en/ja/zh were not measured — this user's corpus is Korean — and are kept
+    # exactly as they were. Removing an unmeasured entry is a change with no
+    # evidence behind it.
     ("en-no-thats-not", r"\bno[,!.\s]+that['’]?s\s+not\b"),
     ("en-thats-not-what-i", r"that['’]?s\s+not\s+what\s+i\b"),
     ("en-not-what-i-asked", r"\bnot\s+what\s+i\s+asked\b"),
