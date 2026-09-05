@@ -796,6 +796,16 @@ AGREEMENT_SAMPLE = tuple(FAMILY_CORRECTIONS.values()) + (
     "안 쓰는 import 정리해줘",
     "작동 방식을 문서로 정리해줘",
     "Add a login button to the header, please.",
+    # Inputs that separate the raw turn from its normalised form, so the
+    # agreement above measures something. Family A is anchored to the start of
+    # the prompt and `normalize_for_match` deletes what the anchor measures
+    # against: a leading `>`, `**` or `「` collapses to whitespace and is
+    # stripped. Both readers must stay silent on these — a reader that
+    # normalised first would report a Family A correction on all three, which
+    # is how a rewrite would kill the anchor without moving a single test.
+    "> 아니 이거 중앙으로 바꿔줘",
+    "**아니** 그냥 이대로 둬",
+    "「아니 그냥 이대로 둬」",
 )
 
 
@@ -806,6 +816,13 @@ class TestOneTableTwoReaders(unittest.TestCase):
     Two tables is how a fix lands in one reader and not the other: a phrase
     added for the live nudge silently never reaches the miner, and a sweep of
     past transcripts under-reports against the detector the user actually runs.
+
+    The miner satisfies this by delegating to the hook's compiled patterns, so
+    the three agreement assertions below cannot fail for any input — which is
+    correct, and which also means AGREEMENT_SAMPLE proves nothing on its own.
+    `test_the_agreement_sample_would_catch_a_miner_that_normalised_first` is
+    what makes the sample a measurement: it stands up the second matcher this
+    branch removed and requires the sample to separate it from the hook.
     """
 
     @classmethod
@@ -839,6 +856,48 @@ class TestOneTableTwoReaders(unittest.TestCase):
                 continue
             with self.subTest(text=text):
                 self.assertIn(hook_slug, self.miner.is_correction(text))
+
+    def test_the_agreement_sample_would_catch_a_miner_that_normalised_first(self):
+        """The sample is a measurement or it is decoration.
+
+        `is_correction` iterates the hook's own compiled patterns, so no input
+        can make the two readers disagree. That delegation is the point of C2 —
+        one table, and the risk it guards is a rewrite that reintroduces a
+        second matcher — but it also means the sample above cannot fail, and a
+        list of thirty inputs that cannot fail reads as evidence and is not.
+
+        What gives it teeth is an input on which the *likeliest* such rewrite
+        would diverge. That rewrite is the one this branch removed: matching
+        against `normalize_for_match(text)`, which strips punctuation and so
+        deletes exactly what Family A's `^` anchor measures against. This test
+        stands that reader up as a counterfactual and requires the sample to
+        separate it from the hook. If nothing separates them, the sample has
+        stopped covering the invariant and needs an input that does.
+        """
+        table = [
+            (slug, re.compile(pattern, re.IGNORECASE))
+            for slug, pattern in self.hook.CORRECTION_PHRASES
+        ]
+        caught = []
+        for text in AGREEMENT_SAMPLE:
+            hook_slug = self.hook.detect_correction(text)
+            normalised = [
+                slug for slug, regex in table
+                if regex.search(self.miner.normalize_for_match(text))
+            ]
+            if bool(normalised) != (hook_slug is not None):
+                caught.append(
+                    "%r -> hook=%r normalising-reader=%r"
+                    % (text, hook_slug, normalised)
+                )
+        self.assertNotEqual(
+            caught,
+            [],
+            "no input in AGREEMENT_SAMPLE separates the hook from a reader "
+            "that normalises before matching, so the agreement tests above "
+            "would stay green through a rewrite that silently killed Family "
+            "A's sentence-initial anchor",
+        )
 
     def test_the_miner_keeps_no_phrase_table_of_its_own(self):
         """The hook's table is canonical; the miner reads that list rather than
