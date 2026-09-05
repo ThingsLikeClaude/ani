@@ -24,36 +24,50 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
+
+# --------------------------------------------------------------------------
+# The one table (spec C2)
+# --------------------------------------------------------------------------
+# The hook owns the canonical correction vocabulary and the miner reads it,
+# because the two detect the same thing and divergence is how a fix lands in
+# one reader and not the other. The hook's form wins: Family A is anchored to
+# the start of a turn, and a literal substring table cannot express that.
+#
+# The import direction and the path handling follow ``scripts/ani_doctor.py``,
+# which already imports ``ani_trigger`` for exactly this reason.
+_HOOK_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "hooks"
+)
+try:
+    sys.dont_write_bytecode = True
+    sys.path.insert(0, _HOOK_DIR)
+    import ani_trigger  # noqa: E402
+finally:
+    try:
+        sys.path.remove(_HOOK_DIR)
+    except ValueError:  # pragma: no cover - defensive
+        pass
 
 # --------------------------------------------------------------------------
 # Phrase hints
 # --------------------------------------------------------------------------
-# (phrase, language). Korean is matched as a plain substring because Korean
-# agglutinates without spaces; English is matched on whitespace boundaries so
-# that "i meant" does not fire inside "hi meant".
-CORRECTION_PHRASES = [
-    ("아니 그게 아니라", "ko"),
-    ("그게 아니라", "ko"),
-    ("아니라고", "ko"),
-    ("그거 말고", "ko"),
-    ("내 말은", "ko"),
-    ("라는 뜻이었어", "ko"),
-    ("왜 자꾸", "ko"),
-    ("또 그러네", "ko"),
-    ("아니 그런 뜻이", "ko"),
-    ("no, that's not", "en"),
-    ("that's not what i", "en"),
-    ("i meant", "en"),
-    ("not what i asked", "en"),
-    ("you misunderstood", "en"),
-]
+# Correction detection is the hook's table, imported verbatim: (slug, regex),
+# most-specific first. The miner keeps no second list, so the digest labels a
+# mined moment with the same slug the live nudge would have emitted and the two
+# can be read against each other.
+CORRECTION_PHRASES = ani_trigger.CORRECTION_PHRASES
+_CORRECTION_REGEXES = ani_trigger._COMPILED_PHRASES
 
+# The positive-ack list stays here and stays literal (phrase, language). It
+# feeds the miner's advisory retro hint, never the live path, and it has never
+# been measured — so it is out of the one-table rule on purpose.
 POSITIVE_ACK_PHRASES = [
     ("좋아", "ko"),
     ("좋네", "ko"),
@@ -67,13 +81,29 @@ POSITIVE_ACK_PHRASES = [
     ("that works", "en"),
 ]
 
-# Trigger words themselves must not become cluster keywords.
+# Trigger words themselves must not become cluster keywords: a cluster of
+# corrections about background colour is called 배경색, never 아니라고. The
+# Korean half below is the vocabulary CORRECTION_PHRASES matches on, so it has
+# to be extended in the same edit that extends the table — tests/test_bootstrap
+# .py pins exactly that, by running every Hangul literal in the table through
+# `tokenize` and requiring nothing back.
 STOPWORDS = {
-    # Korean — trigger fragments plus very common filler
-    "아니", "아니라", "아니라고", "그게", "그거", "말고", "말은", "뜻이었어",
-    "라는", "뜻이", "자꾸", "그러네", "그런", "이거", "저거", "이건", "저건",
-    "해줘", "해라", "하라고", "다시", "그리고", "근데", "그냥", "진짜", "지금",
-    "그대로", "이렇게", "저렇게", "여기", "거기",
+    # Korean — Family A and the unanchored 아니 phrases
+    "아니", "아니라", "아니라고", "그게", "그거", "말고", "말은", "뜻이었",
+    "뜻이었어", "라는", "뜻이", "그런",
+    # Family B — stated recurrence
+    "여러", "여러번", "얘기", "지적", "전에도", "계속", "아까도", "자꾸",
+    "그러", "그러네",
+    # Family C — defect report
+    "되는데", "안되는데", "작동",
+    # Family D — negative verdict
+    "슬롭", "이상해", "별로야", "촌스", "구려",
+    # Family E — reversal
+    "다시", "생각", "쓰게", "안쓰게", "없던", "걸로",
+    # Korean — very common filler that names nothing
+    "이거", "저거", "이건", "저건", "해줘", "해라", "하라고", "그리고",
+    "근데", "그냥", "진짜", "지금", "그대로", "이렇게", "저렇게", "여기",
+    "거기",
     # English — trigger fragments plus stopwords
     "no", "not", "that", "thats", "what", "meant", "asked", "misunderstood",
     "you", "your", "the", "an", "is", "are", "was", "were", "be", "to", "of",
@@ -200,7 +230,16 @@ def find_phrases(text: str, table) -> list:
 
 
 def is_correction(text: str) -> list:
-    return find_phrases(text, CORRECTION_PHRASES)
+    """Every slug in the hook's table that matches this turn, in table order.
+
+    Deliberately the raw text and the hook's own compiled patterns, not the
+    normalised form ``find_phrases`` uses: the miner has to answer exactly what
+    the hook would have answered on the same turn, and normalising first is a
+    second matcher wearing the first one's name.
+    """
+    if not text:
+        return []
+    return [slug for slug, regex in _CORRECTION_REGEXES if regex.search(text)]
 
 
 def is_positive_ack(text: str) -> list:
