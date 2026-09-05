@@ -144,7 +144,12 @@ which the old table carried loose, are complaints about repetition and so belong
 here: both were re-slugged into `ko-recur-`, and the second widened to
 `또 그러`.
 
-**Family C — defect report.** `안 되는데`, `안 됨`, `작동 안`. Measured 4.8/day.
+**Family C — defect report.** `안 되는데`, `안 됨`, `작동 안 (해/함/된다/돼)`.
+Measured 4.8/day. The last entry requires the verb the negation adverb negates,
+because bare `작동 안` fires on 작동 followed by any word that opens with 안 —
+안정성, 안내, 안전, 안심 — and `\s*` matches a newline, so the paragraph break
+before an 안녕하세요 counted too. That was a defect report raised against a
+question about how something operates.
 
 **Family D — negative verdict.** `슬롭`, `이상해`, `별로야`, `촌스`, `구려`.
 Measured 4.6/day. This family is the most user-specific in the list and the most

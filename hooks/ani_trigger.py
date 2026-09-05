@@ -155,7 +155,13 @@ CORRECTION_PHRASES = (
     # of naming the mistake: "프런트가 안되는데?".
     ("ko-defect-an-doeneunde", r"안\s*되는데"),
     ("ko-defect-an-doem", r"안\s*됨"),
-    ("ko-defect-jakdong-an", r"작동\s*안"),
+    # 안 is the negation adverb only when a verb follows it. Bare 작동\s*안
+    # fired on 작동 followed by any word starting with 안 — 안정성, 안내,
+    # 안전, 안심 — and \s* matches a newline, so a paragraph ending in 작동
+    # and the next one opening with 안녕하세요 reported a defect. Both this
+    # spec and references/triggers.md always described the entry as 작동 안
+    # with the verb after it.
+    ("ko-defect-jakdong-an", r"작동\s*안\s*(?:하|해|한|함|했|되|된|됨|됐|돼|될)"),
     # Family D - negative verdict (4.6/day). The most user-specific family in
     # the table and the first candidate for per-user tuning, kept because two
     # of the eleven labelled corrections are nothing but this. 별로 on its own

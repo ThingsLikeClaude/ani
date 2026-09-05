@@ -611,6 +611,55 @@ class NegativeVerdictBoundaryTests(unittest.TestCase):
                 self.assertIsNone(slug, "%r fired %s" % (prompt, slug))
 
 
+class DefectReportBoundaryTests(unittest.TestCase):
+    """C1 precision, Family C: `작동 안` is 작동 plus the negation adverb.
+
+    안 is only the negation adverb when a verb follows it. Written as bare
+    `작동\\s*안`, the entry fires on 작동 followed by whitespace and *any* word
+    that happens to start with 안 — 안정성, 안내, 안전, 안심 — which is ordinary
+    vocabulary in exactly the prompt this entry should stay out of: a request
+    about how something operates. `\\s*` matches a newline too, so a paragraph
+    ending in 작동 and the next one opening with 안녕하세요 fired a defect
+    report.
+
+    Both the spec (C1, Family C) and `references/triggers.md` describe this
+    entry as 작동 안 with a verb after it. The implementation was wider than
+    either document describing it, which is what makes this a defect rather
+    than a judgement call about recall.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = load_trigger_module()
+
+    def detect(self, prompt):
+        return self.mod.detect_correction(prompt)
+
+    def test_jakdong_an_needs_the_verb_the_negation_adverb_negates(self):
+        for prompt in (
+            "이거 작동 안 해",
+            "작동안하는데 확인좀 해줘",
+            "빌드가 작동 안 된다",
+            "스크롤이 작동 안 함",
+            "저장 버튼 작동안돼",
+        ):
+            with self.subTest(fires=prompt):
+                slug = self.detect(prompt)
+                self.assertIsNotNone(slug, "%r was not detected" % prompt)
+                self.assertTrue(
+                    slug.startswith(FAMILY_SLUG_PREFIXES["C"]), slug
+                )
+        for prompt in (
+            "작동 안정성을 점검해줘",
+            "작동 안내 문서를 작성해줘",
+            "작동 안전장치가 필요한지 봐줘",
+            "이 스크립트 작동\n안녕하세요 오늘도 부탁드립니다",
+        ):
+            with self.subTest(silent=prompt):
+                slug = self.detect(prompt)
+                self.assertIsNone(slug, "%r fired %s" % (prompt, slug))
+
+
 class FamilyNudgeTests(HookTestCase):
     """C4, live half: a prompt from each family reaches Path B.
 

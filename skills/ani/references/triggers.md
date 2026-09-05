@@ -79,7 +79,7 @@ The user reports the symptom instead of naming the mistake. Still a correction.
 | --- | --- | --- |
 | ~가 안 되는데 | `ko-defect-an-doeneunde` | "프런트가 안되는데?" — a bug report aimed at your last change |
 | 안 됨 | `ko-defect-an-doem` | Also appears inside long instruction text as a *rule* rather than a complaint; RESTATE settles which it is |
-| 작동 안 (해/함/된다) | `ko-defect-jakdong-an` | |
+| 작동 안 (해/함/된다/돼) | `ko-defect-jakdong-an` | 안 has to be the negation adverb: a verb follows it. Without that, 작동 + 안정성/안내/안전 fires a defect report on a question about how something works |
 
 ### D — negative verdict
 
