@@ -397,8 +397,16 @@ def scan_file(path: Path, cutoff, stats: dict, budget: dict) -> list:
     live and can hold a single line carrying a huge tool payload, so no more
     than ``MAX_LINE_BYTES`` is ever held for a line. Oversized lines and
     messages dropped by the retention caps are counted in ``stats``.
+
+    Only prose is retained, but each retained message also records whether an
+    assistant *entry* came before it in this file — prose or a bare run of tool
+    calls. That flag is the whole of C3: a turn made of tool_use blocks alone
+    produces no text and never lands in this list, so without it a user
+    correcting an agent in the middle of tool work is indistinguishable from
+    the opening turn of a headless run.
     """
     messages = []
+    agent_entry_seen = False
     try:
         handle = path.open("rb")
     except OSError as exc:                                   # pragma: no cover
@@ -447,8 +455,14 @@ def scan_file(path: Path, cutoff, stats: dict, budget: dict) -> list:
                 content = entry.get("content")
             text = extract_text(content)
             if not text:
-                # Tool results, tool calls and empty turns land here.
+                # Tool results, tool calls and empty turns land here. An
+                # assistant turn that was nothing but tool calls contributes
+                # presence and no text: it proves the agent was working, and
+                # the quote and the stored context still come from prose, so
+                # tool arguments never reach the digest.
                 stats["non_prose_skipped"] += 1
+                if role == "assistant":
+                    agent_entry_seen = True
                 continue
 
             if role == "user" and is_machine_injected(text):
@@ -478,8 +492,11 @@ def scan_file(path: Path, cutoff, stats: dict, budget: dict) -> list:
                     "text": text,
                     "timestamp": timestamp,
                     "uuid": uuid if isinstance(uuid, str) else "",
+                    "agent_entry_before": agent_entry_seen,
                 }
             )
+            if role == "assistant":
+                agent_entry_seen = True
             kept_here += 1
             budget["messages"] += 1
     return messages
@@ -489,8 +506,9 @@ def scan_file(path: Path, cutoff, stats: dict, budget: dict) -> list:
 # Moment extraction
 # --------------------------------------------------------------------------
 def preceding_assistant(messages: list, index: int) -> str:
+    """The nearest assistant prose before ``index``, or "" if there is none."""
     for j in range(index - 1, -1, -1):
-        if messages[j]["role"] == "assistant":
+        if messages[j]["role"] == "assistant" and messages[j]["text"]:
             return messages[j]["text"]
     return ""
 
@@ -530,6 +548,13 @@ def collect_moments(session_id: str, messages: list, stats: dict = None) -> list
     pasted diff — happened to carry a trigger phrase. Those turns are the
     machine talking, they repeat verbatim across runs, and repetition is worth
     `+2`, so mining them is how noise buys itself a promotion.
+
+    What counts as an agent turn is an assistant *entry*, not assistant prose
+    (spec C3). A turn of tool calls alone says the agent was already working;
+    the quote and ``assistant_context`` still come only from prose, so such a
+    turn contributes presence, not text. A correction that genuinely opens a
+    transcript has nothing before it either way and is still dropped, which is
+    the case the filter was written for.
     """
     moments = []
     user_order = [i for i, m in enumerate(messages) if m["role"] == "user"]
@@ -548,7 +573,7 @@ def collect_moments(session_id: str, messages: list, stats: dict = None) -> list
             continue
 
         context = preceding_assistant(messages, index)
-        if not context:
+        if not context and not message.get("agent_entry_before"):
             if stats is not None:
                 stats["no_agent_context"] += 1
             continue
