@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -1163,6 +1164,74 @@ class TestToolOnlyAgentContext(BootstrapTestCase):
         self.assertEqual(
             stat_value(digest, "Corrections with no preceding agent turn skipped"), 1
         )
+
+
+class TestWhichLayerDropsATextlessTurn(BootstrapTestCase):
+    """C3, read from the other end: which mechanism keeps a textless turn out
+    of the context search.
+
+    `preceding_assistant` guarded its walk with `and messages[j]["text"]`. That
+    condition can never be false — `scan_file` appends only entries whose
+    `extract_text` was truthy — so the line reads as the mechanism that stops a
+    tool-only turn from supplying the quote and is not that mechanism. The
+    `continue` in `scan_file` is. A dead guard is harmless until the next
+    reader of C3 believes it, and then it is the wrong place to go looking.
+
+    One assertion per layer. The first names the mechanism that actually does
+    the filtering, which became load-bearing the moment the guard came out. The
+    second hands `preceding_assistant` a `messages` list that `scan_file`
+    cannot produce and pins that the walk filters nothing of its own — the
+    difference between the two layers is only observable on an input that
+    cannot occur, which is exactly the claim being made.
+    """
+
+    TOOL_ONLY = [
+        {
+            "type": "tool_use",
+            "id": "toolu_f7",
+            "name": "Edit",
+            "input": {"file_path": "app/theme.ts", "old_string": "a", "new_string": "b"},
+        }
+    ]
+
+    def setUp(self):
+        super().setUp()
+        self.miner = load_script_module()
+
+    def test_scan_file_is_the_layer_that_drops_a_textless_turn(self):
+        path = self.tmp / "projects" / "layers" / "s.jsonl"
+        write_transcript(path, [
+            make_entry("assistant", "팔레트 전체를 교체했습니다", iso_days_ago(1)),
+            make_entry("assistant", self.TOOL_ONLY, iso_days_ago(1)),
+            make_entry("user", "아니 그게 아니라 배경색만 바꾸라고", iso_days_ago(1)),
+        ])
+        messages = self.miner.scan_file(path, None, defaultdict(int), {"messages": 0})
+        self.assertEqual(
+            [m["text"] for m in messages],
+            ["팔레트 전체를 교체했습니다", "아니 그게 아니라 배경색만 바꾸라고"],
+            "the tool-only turn reached `messages`, so the guard downstream is "
+            "not dead after all and this whole class is wrong",
+        )
+        self.assertTrue(messages[-1]["agent_entry_before"])
+
+    def test_preceding_assistant_filters_nothing_because_scan_file_already_did(self):
+        """The nearest assistant *entry*, not the nearest one that has prose.
+
+        This input cannot come out of `scan_file`. It is here because the two
+        readings agree on every input that can, and a test that cannot tell
+        them apart cannot say which layer owns the filter.
+        """
+        messages = [
+            {"role": "assistant", "text": "팔레트 전체를 교체했습니다"},
+            {"role": "assistant", "text": ""},
+            {"role": "user", "text": "아니 그게 아니라 배경색만 바꾸라고"},
+        ]
+        self.assertEqual(self.miner.preceding_assistant(messages, 2), "")
+        self.assertEqual(
+            self.miner.preceding_assistant(messages, 1),
+            "팔레트 전체를 교체했습니다",
+        )
+        self.assertEqual(self.miner.preceding_assistant(messages, 0), "")
 
 
 class TestFamiliesReachTheDigest(BootstrapTestCase):

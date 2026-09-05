@@ -589,9 +589,15 @@ def scan_file(path: Path, cutoff, stats: dict, budget: dict) -> list:
 # Moment extraction
 # --------------------------------------------------------------------------
 def preceding_assistant(messages: list, index: int) -> str:
-    """The nearest assistant prose before ``index``, or "" if there is none."""
+    """The nearest assistant entry before ``index``, or "" if there is none.
+
+    No emptiness check here: ``scan_file`` never appends an entry whose text is
+    falsy, so a guard on it would read as the mechanism that keeps a tool-only
+    turn from supplying the quote while not being that mechanism — the
+    ``continue`` in ``scan_file`` is.
+    """
     for j in range(index - 1, -1, -1):
-        if messages[j]["role"] == "assistant" and messages[j]["text"]:
+        if messages[j]["role"] == "assistant":
             return messages[j]["text"]
     return ""
 
