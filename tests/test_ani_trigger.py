@@ -402,13 +402,18 @@ class CorrectionVocabularyTests(unittest.TestCase):
 
 
 class SentenceInitialAniGuardTests(unittest.TestCase):
-    """C1 precision: Family A is two syllables that open ordinary Korean.
+    """C1, Family A: where sentence-initial `아니` starts and where it stops.
 
-    `아니` is the opening of `아니라`, `아니면`, `아니야`, `아니에요` and a dozen
-    other everyday words. Family A fires on roughly 5 turns a day; if it also
-    fires on ordinary speech it will nudge on far more than that, and every one
-    of those is a marker the agent reads and finds nothing behind. The nudge is
-    cheap, not free.
+    This class was written from the guess that `아니` plus any following
+    syllable is an ordinary word. Measurement over 1,585 human turns says
+    otherwise: `아니야`, `아니요` and `아니지` opened a sentence four times in
+    five days and every sampled one was a genuine correction, while `아니면`
+    was the only false positive anyone measured. The discriminator is word
+    class, not sentence mood — `아니` is a negating interjection and `아니면` is
+    a conjunction proposing an alternative — so nothing here keys on a question
+    mark. `아닌데`, `아닌가`, `아니었` and `아니라` opened no sentence at all in
+    the window and are asserted on nowhere: an untested assertion is weight,
+    not evidence.
     """
 
     @classmethod
@@ -422,23 +427,27 @@ class SentenceInitialAniGuardTests(unittest.TestCase):
         slug = self.detect(prompt)
         self.assertIsNone(slug, "%r fired %s" % (prompt, slug))
 
-    def test_a_word_that_merely_opens_with_those_syllables_is_not_a_correction(self):
-        """`아니야 그거 맞아` agrees with the agent. It must not read as `no`."""
+    def test_sentence_initial_ani_with_an_ending_attached_is_still_a_correction(self):
+        """`아니야`, `아니요`, `아니지` open a correction, not an ordinary word.
+
+        The first two prompts are measured turns; the rest are the same three
+        endings on other sentences. Four occurrences in five days, every
+        sampled one a genuine correction, is the whole of the evidence there is
+        about these endings, and it points one way.
+        """
         for prompt in (
-            "아니라서 지금은 못 해",
-            "아니면 다른 방법도 있을까?",
-            "아닌데 그건 좀 다른 얘기야",
+            "아니야 내가 봤을땐 그냥 프리스타일 컬링으로 가야겠다",
+            "아니지 다이얼이 수동/자동인거지",
             "아니야 그거 맞아",
-            "아니지 이제 그만 정리하자",
-            "아니었어 처음부터 그렇게 되어 있었어",
-            "아닙니다 그대로 두셔도 됩니다",
-            "아니에요 지금 이대로 좋아요",
             "아니요 괜찮습니다",
-            "아닌가 싶어서 한번 더 봤어",
-            "아니다 싶으면 알려줘",
+            "아니지 이제 그만 정리하자",
         ):
             with self.subTest(prompt=prompt):
-                self.assert_silent(prompt)
+                slug = self.detect(prompt)
+                self.assertIsNotNone(slug, "%r was not detected" % prompt)
+                self.assertTrue(
+                    slug.startswith(FAMILY_SLUG_PREFIXES["A"]), slug
+                )
 
     def test_ani_in_the_middle_of_a_sentence_does_not_fire(self):
         """Mid-sentence `아니` is the user correcting their own words, not the
@@ -485,6 +494,121 @@ class SentenceInitialAniGuardTests(unittest.TestCase):
         ):
             with self.subTest(prompt=prompt):
                 self.assert_silent(prompt)
+
+
+class MeasuredFalsePositiveGuardTests(unittest.TestCase):
+    """`아니면` is the one Family A false positive anybody measured.
+
+    It lives in a class of its own on purpose. Until now the only assertion
+    keeping it out sat inside the Family A guard method, beside ten assertions
+    that measurement disproved — so the edit that corrects those ten can take
+    the one real guard with it. This is the guard that has evidence behind it,
+    and it should be as hard to delete by accident as the evidence was to
+    gather.
+
+    `아니면` proposes an alternative ("아니면 버셀 배포할까???"). The word
+    beside it, `아니`, negates. Both prompts below are questions, which is why
+    neither half of this test looks at the question mark.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = load_trigger_module()
+
+    def detect(self, prompt):
+        return self.mod.detect_correction(prompt)
+
+    def test_animyeon_stays_silent_while_the_bare_ani_beside_it_fires(self):
+        """One syllable apart, opposite verdicts.
+
+        The silent half on its own would pass against a detector that fires on
+        nothing at all — which is exactly the detector this branch exists to
+        replace. Pinned against its minimal pair it says something: the table
+        tells a conjunction from an interjection, rather than merely staying
+        quiet.
+        """
+        for prompt in ("아니면 버셀 배포할까???", "아니면 다른 방법도 있을까?"):
+            with self.subTest(silent=prompt):
+                slug = self.detect(prompt)
+                self.assertIsNone(slug, "%r fired %s" % (prompt, slug))
+        for prompt in ("아니 버셀 배포할까???", "아니 다른 방법도 있을까?"):
+            with self.subTest(fires=prompt):
+                slug = self.detect(prompt)
+                self.assertIsNotNone(slug, "%r was not detected" % prompt)
+                self.assertTrue(
+                    slug.startswith(FAMILY_SLUG_PREFIXES["A"]), slug
+                )
+
+
+class StatedRecurrenceBoundaryTests(unittest.TestCase):
+    """C1 precision, Family B: the rarest family, and the one with no boundary
+    pinned anywhere.
+
+    Family B is the user saying the recurrence out loud, which is the single
+    signal that proves recurrence without inference — and at 0.6/day it is
+    also the family a stray substring match would drown fastest. `여러번` is an
+    ordinary frequency adverb: a request to do something several times is not
+    a complaint that something was said several times.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = load_trigger_module()
+
+    def detect(self, prompt):
+        return self.mod.detect_correction(prompt)
+
+    def test_stated_recurrence_is_a_complaint_about_repetition_not_a_request_to_repeat(self):
+        for prompt in (
+            "이 폴더는 건드리지 말라고 여러번 말했잖아",
+            "아까도 얘기했지만 이 파일은 그대로 둬",
+        ):
+            with self.subTest(fires=prompt):
+                slug = self.detect(prompt)
+                self.assertIsNotNone(slug, "%r was not detected" % prompt)
+                self.assertTrue(
+                    slug.startswith(FAMILY_SLUG_PREFIXES["B"]), slug
+                )
+        for prompt in (
+            "이 스크립트 여러번 돌려봐야 하니까 반복 실행 옵션 추가해줘",
+            "플래키한지 보게 이 테스트만 여러번 실행해줘",
+        ):
+            with self.subTest(silent=prompt):
+                slug = self.detect(prompt)
+                self.assertIsNone(slug, "%r fired %s" % (prompt, slug))
+
+
+class NegativeVerdictBoundaryTests(unittest.TestCase):
+    """C1 precision, Family D: 4.6/day, and until now fire tests only.
+
+    Family D is a judgement passed on the work — `별로야` is a predicate. The
+    word it opens with, `별로`, is a degree adverb meaning "not particularly",
+    and it turns up in perfectly ordinary requests. Same discriminator as
+    Family A: word class, not mood.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = load_trigger_module()
+
+    def detect(self, prompt):
+        return self.mod.detect_correction(prompt)
+
+    def test_a_negative_verdict_is_a_judgement_not_the_degree_adverb_it_opens_with(self):
+        for prompt in ("이 배너 디자인 별로야", "지금 폰트 조합 진짜 별로야"):
+            with self.subTest(fires=prompt):
+                slug = self.detect(prompt)
+                self.assertIsNotNone(slug, "%r was not detected" % prompt)
+                self.assertTrue(
+                    slug.startswith(FAMILY_SLUG_PREFIXES["D"]), slug
+                )
+        for prompt in (
+            "별로 급하지 않으니까 천천히 해도 돼",
+            "별로 안 중요한 파일이니까 그냥 둬",
+        ):
+            with self.subTest(silent=prompt):
+                slug = self.detect(prompt)
+                self.assertIsNone(slug, "%r fired %s" % (prompt, slug))
 
 
 class FamilyNudgeTests(HookTestCase):

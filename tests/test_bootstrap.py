@@ -848,6 +848,66 @@ class TestOneTableTwoReaders(unittest.TestCase):
         self.assertEqual(list(miner_table), list(self.hook.CORRECTION_PHRASES))
 
 
+class TestTriggerVocabularyNeverBecomesAKeyword(unittest.TestCase):
+    """A cluster must not be named after the phrase that caught it.
+
+    `tokenize` drops trigger vocabulary via `STOPWORDS` so that a cluster of
+    corrections about background colour is called `배경색` and not `아니라고`.
+    The keyword coverage that exists today names three fragments of the old
+    table by hand (`아니`, `아니라`, `그게`), which means the list and the table
+    are joined by nothing at all: every family the table gains arrives with new
+    trigger words that leak straight into cluster keywords, and no test moves.
+
+    The honest invariant is not "every regex source string is in STOPWORDS" —
+    regexes are not words, and `^아니(?!면)` is not a word anybody typed. It is
+    this: take the literal Korean the table matches on, hand it to the miner's
+    own tokenizer, and nothing may come back. Whether a word is covered
+    directly, as a particle-stripped stem, or by the length floor is the
+    tokenizer's business; the requirement is only that no trigger word can
+    survive it and go on to name a cluster.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.miner = load_script_module()
+        cls.hook = load_hook_module()
+
+    def korean_literals_in_the_table(self):
+        """Every run of Hangul the canonical table matches on, ≥2 syllables.
+
+        Regex metacharacters, lookarounds and the `[가-힣]` class all reduce to
+        runs of one syllable or none, so they contribute nothing. The hook's
+        table is the source because it is the canonical one (C2) — after the
+        miner imports it, this reads the same list either way.
+        """
+        words = set()
+        for _slug, pattern in self.hook.CORRECTION_PHRASES:
+            for run in re.findall(r"[가-힣]+", pattern):
+                if len(run) >= 2:
+                    words.add(run)
+        return sorted(words)
+
+    def test_every_korean_word_the_phrase_table_matches_on_is_a_stopword(self):
+        words = self.korean_literals_in_the_table()
+        self.assertGreaterEqual(
+            len(words), 10,
+            "only %d Korean literal(s) found in the table — the extraction is "
+            "reading the wrong thing, and this test would pass vacuously"
+            % len(words),
+        )
+        leaked = [
+            "%s -> %s" % (word, sorted(self.miner.tokenize(word)))
+            for word in words
+            if self.miner.tokenize(word)
+        ]
+        self.assertEqual(
+            leaked,
+            [],
+            "%d trigger word(s) survive tokenisation and can name a cluster:"
+            "\n  %s" % (len(leaked), "\n  ".join(leaked)),
+        )
+
+
 class TestToolOnlyAgentContext(BootstrapTestCase):
     """C3: `no_agent_context` relaxed to what it was written for.
 
