@@ -618,6 +618,55 @@ class StatedRecurrenceBoundaryTests(unittest.TestCase):
                 slug = self.detect(prompt)
                 self.assertIsNone(slug, "%r fired %s" % (prompt, slug))
 
+    def test_the_ending_set_requires_a_verb_not_a_noun_or_a_credit_to_the_agent(self):
+        """`씀` and `하셨` were added to make the ending set cover honorific
+        speech, but neither one actually pins down "the saying already
+        happened".
+
+        `말` immediately followed by `씀` spells the honorific noun 말씀
+        regardless of what comes after it, so the ending fired on any tense at
+        all: 말씀해주세요 (present request, "please tell me"), 말씀하세요
+        (present imperative), 여러번 말씀해주시면 좋겠어요 (a wish), 말씀
+        부탁드립니다 (a present request), and 전에도 말씀 많이 하시던데 (a
+        present-tense observation). None of these claims a correction was
+        already stated — that is 말씀드렸/말씀드리는데, where 씀 is followed by
+        드, so the fix requires that shape rather than dropping 씀 outright.
+
+        `하셨` fires the same way on 지적하셨듯이: the honorific marks the
+        *agent's* past action, so "전에도 지적하셨듯이" credits the agent for a
+        point it already made ("as you pointed out before") instead of
+        complaining that the agent needs to be told again. `듯이` is what turns
+        it into a citation rather than a complaint, so only that combination is
+        excluded.
+
+        Family B is the rarest family (0.6-0.8/day) and the one signal the spec
+        says proves recurrence without inference, so one false positive here
+        costs more than anywhere else in the table.
+        """
+        for prompt in (
+            "계속 말씀해주세요 재밌어요",
+            "계속 말씀하세요",
+            "여러번 말씀해주시면 좋겠어요",
+            "계속 말씀 부탁드립니다",
+            "전에도 말씀 많이 하시던데",
+            "전에도 지적하셨듯이 이건 맞아요",
+        ):
+            with self.subTest(silent=prompt):
+                slug = self.detect(prompt)
+                self.assertIsNone(slug, "%r fired %s" % (prompt, slug))
+        for prompt in (
+            "여러번 말했잖아",
+            "전에도 얘기했는데",
+            "계속 지적함",
+            "여러번 말씀드렸잖아요",
+        ):
+            with self.subTest(fires=prompt):
+                slug = self.detect(prompt)
+                self.assertIsNotNone(slug, "%r was not detected" % prompt)
+                self.assertTrue(
+                    slug.startswith(FAMILY_SLUG_PREFIXES["B"]), slug
+                )
+
 
 class NegativeVerdictBoundaryTests(unittest.TestCase):
     """C1 precision, Family D: 4.6/day, and until now fire tests only.

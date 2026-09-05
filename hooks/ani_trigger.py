@@ -147,8 +147,19 @@ CORRECTION_PHRASES = (
     # rarest family in the table. What makes a complaint a complaint is that
     # the saying already happened, which is how references/triggers.md has
     # always described the family: 말했 / 지적함 / 얘기했 / 말씀.
-    ("ko-recur-yeoreobeon", r"여러\s*번\s*(?:말|얘기|지적)\s*(?:했|함|하셨|하잖|씀)"),
-    ("ko-recur-jeonedo", r"(?:전에도|계속)\s*(?:말|얘기|지적)\s*(?:했|함|하셨|하잖|씀)"),
+    #
+    # 씀 alone is not that verb, though: 말+씀 spells the honorific noun 말씀
+    # no matter what follows, so a bare 씀 fired on any trailing tense —
+    # 말씀해주세요, 말씀하세요, 말씀 부탁드립니다, 말씀 많이 하시던데 — none of
+    # which claim a correction was already stated. 말씀드렸/말씀드리는데 does,
+    # and there 씀 is immediately followed by 드, so that shape is required
+    # instead. 하셨 has the same problem from the other direction: the
+    # honorific marks the *agent's* past action, so "지적하셨듯이" credits the
+    # agent for a point it already made rather than complaining the agent
+    # needs to be told again — 듯이 is what turns it into a citation, so only
+    # that combination is excluded.
+    ("ko-recur-yeoreobeon", r"여러\s*번\s*(?:말|얘기|지적)\s*(?:했|함|하셨(?!듯이)|하잖|씀\s*드)"),
+    ("ko-recur-jeonedo", r"(?:전에도|계속)\s*(?:말|얘기|지적)\s*(?:했|함|하셨(?!듯이)|하잖|씀\s*드)"),
     ("ko-recur-akkado", r"아까도"),
     ("ko-recur-wae-jakku", r"왜\s*자꾸"),
     ("ko-recur-tto-geureo", r"또\s*그러"),
