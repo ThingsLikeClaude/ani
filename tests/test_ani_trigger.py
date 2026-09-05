@@ -106,6 +106,22 @@ def sha8(prompt):
     return hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:8]
 
 
+def load_trigger_module():
+    """Import the hook so the phrase table itself can be exercised directly.
+
+    The subprocess tests prove the process contract. Recall and precision are
+    properties of the table, and a table is cheaper to interrogate than 30
+    interpreter launches.
+    """
+    import importlib.util
+
+    sys.dont_write_bytecode = True  # keep hooks/ free of __pycache__
+    spec = importlib.util.spec_from_file_location("ani_trigger_vocabulary", HOOK)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class HookTestCase(unittest.TestCase):
     """Base: every run happens inside isolated dirs with no ambient store.
 
@@ -273,6 +289,227 @@ class CorrectionDetectionTests(HookTestCase):
         )
         self.assertEqual(code, 0)
         self.assertEqual(out, "")
+
+
+# ---------------------------------------------------------------------------
+# Ground truth for the rebuilt table
+# (docs/specs/2026-09-06-correction-detection-recall.md, C1)
+#
+# Eleven `trigger_quote` values, verbatim, from F files in the user's global
+# store: eleven user turns that an agent, live in a session, judged to be
+# corrections. They are the only labelled positives this project has, and on
+# 2026-09-06 the detector found one of them.
+#
+# The family letter is the family from the spec that each quote belongs to.
+# No quote here belongs to two families, so the slug a hit carries is not a
+# matter of table ordering.
+# ---------------------------------------------------------------------------
+FAMILY_SLUG_PREFIXES = {
+    "A": "ko-ani-",       # sentence-initial 아니
+    "B": "ko-recur-",     # stated recurrence
+    "C": "ko-defect-",    # defect report
+    "D": "ko-verdict-",   # negative verdict
+    "E": "ko-reversal-",  # reversal
+}
+
+GROUND_TRUTH = (
+    ("아니 그게아니라 이걸 테스트 해봐야될거같은데 내가 교정한 순간에 진짜 생기는지", "A"),
+    ("아니 그냥 html 로 만들어서 열어", "A"),
+    ("이미지는 gpt 5.6 codex cli를 통해 받아오고(여러번 지적함,특히 책상같은거)", "B"),
+    ("신청 폼도 입력박스도 그렇고 좀 대부분 AI 슬롭같아 페이크 3d랑 전반적으로 디자인을 다시해봐.", "D"),
+    ("아니 근데 블렌더 힉스필드 브릿지 사용하고있는거아니었어?", "A"),
+    ("아니 이거 중앙으로 바꿔줘 첫장면 그리고 design FRONTEND TASTE쓴거맞음??? 테크 느낌이", "A"),
+    ("아니 너가 직접 개발서버 띄워서 알려줘.", "A"),
+    ("신청 완료 저거 도장 내가 상세페이지에서 겪었던 슬롭임", "D"),
+    ("프런트가 안되는데?", "C"),
+    ("3456은 다시생각해보니까 일단 안쓰게될거같아", "E"),
+)
+
+# The eleventh quote. Named in the spec as a miss the project accepts.
+KNOWN_MISS = "굉장히 짧고 간결하게 눌러서 써야돼"
+
+# One prompt per family, short enough to drive through the process.
+FAMILY_PROMPTS = {
+    "A": "아니 그냥 html 로 만들어서 열어",
+    "B": "전에도 말했잖아 이 폴더는 건드리지 마",
+    "C": "프런트가 안되는데?",
+    "D": "이거 완전 AI 슬롭 같아",
+    "E": "그 3456은 다시 생각해보니까 안 쓰게 될 것 같아",
+}
+
+
+class CorrectionVocabularyTests(unittest.TestCase):
+    """C1: what the table notices, and what it must keep ignoring.
+
+    Recall is measured against the eleven quotes the system itself labelled.
+    Precision is measured against ordinary Korean, because Family A is two
+    syllables that open a great many sentences that correct nobody.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = load_trigger_module()
+
+    def detect(self, prompt):
+        return self.mod.detect_correction(prompt)
+
+    def test_ten_of_the_eleven_ground_truth_quotes_are_detected(self):
+        """Recall against the project's own labels: 9% is why the spec exists.
+
+        Nothing downstream — F, recurrence, E, S — happens for a turn the
+        detector walked past, so this number caps everything ani can learn.
+        """
+        missed = [quote for quote, _ in GROUND_TRUTH if self.detect(quote) is None]
+        self.assertEqual(
+            missed,
+            [],
+            "%d of %d labelled corrections went unnoticed:\n  %s"
+            % (len(missed), len(GROUND_TRUTH), "\n  ".join(missed)),
+        )
+
+    def test_a_bare_directive_is_still_not_a_correction(self):
+        """The eleventh quote stays a miss, deliberately.
+
+        It carries no correction marker at all — it is the user stating how
+        they want something written. A rule wide enough to catch it fires on
+        every instruction they ever give, and the store fills with things they
+        simply asked for.
+        """
+        self.assertIsNone(self.detect(KNOWN_MISS))
+
+    def test_each_ground_truth_quote_is_attributed_to_its_family(self):
+        """A hit has to say which family fired, or a noisy family cannot be
+        removed on evidence later."""
+        for quote, family in GROUND_TRUTH:
+            with self.subTest(quote=quote):
+                slug = self.detect(quote)
+                self.assertIsNotNone(slug, "not detected at all")
+                self.assertTrue(
+                    slug.startswith(FAMILY_SLUG_PREFIXES[family]),
+                    "family %s expects a %r slug, got %r"
+                    % (family, FAMILY_SLUG_PREFIXES[family], slug),
+                )
+
+    def test_the_table_carries_an_entry_for_every_family(self):
+        """Five families were measured; five families have to be in the table."""
+        slugs = [slug for slug, _ in self.mod.CORRECTION_PHRASES]
+        for family, prefix in sorted(FAMILY_SLUG_PREFIXES.items()):
+            with self.subTest(family=family):
+                self.assertTrue(
+                    any(slug.startswith(prefix) for slug in slugs),
+                    "no slug starts with %r" % prefix,
+                )
+
+
+class SentenceInitialAniGuardTests(unittest.TestCase):
+    """C1 precision: Family A is two syllables that open ordinary Korean.
+
+    `아니` is the opening of `아니라`, `아니면`, `아니야`, `아니에요` and a dozen
+    other everyday words. Family A fires on roughly 5 turns a day; if it also
+    fires on ordinary speech it will nudge on far more than that, and every one
+    of those is a marker the agent reads and finds nothing behind. The nudge is
+    cheap, not free.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = load_trigger_module()
+
+    def detect(self, prompt):
+        return self.mod.detect_correction(prompt)
+
+    def assert_silent(self, prompt):
+        slug = self.detect(prompt)
+        self.assertIsNone(slug, "%r fired %s" % (prompt, slug))
+
+    def test_a_word_that_merely_opens_with_those_syllables_is_not_a_correction(self):
+        """`아니야 그거 맞아` agrees with the agent. It must not read as `no`."""
+        for prompt in (
+            "아니라서 지금은 못 해",
+            "아니면 다른 방법도 있을까?",
+            "아닌데 그건 좀 다른 얘기야",
+            "아니야 그거 맞아",
+            "아니지 이제 그만 정리하자",
+            "아니었어 처음부터 그렇게 되어 있었어",
+            "아닙니다 그대로 두셔도 됩니다",
+            "아니에요 지금 이대로 좋아요",
+            "아니요 괜찮습니다",
+            "아닌가 싶어서 한번 더 봤어",
+            "아니다 싶으면 알려줘",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assert_silent(prompt)
+
+    def test_ani_in_the_middle_of_a_sentence_does_not_fire(self):
+        """Mid-sentence `아니` is the user correcting their own words, not the
+        agent's work. Family A is anchored to the start of the prompt."""
+        for prompt in (
+            "방금 만든 컴포넌트 이름을 Card 아니 CardItem 으로 바꿔줘",
+            "그건 문제가 아니 지금 급한 건 배포야",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assert_silent(prompt)
+
+    def test_leading_whitespace_does_not_break_the_anchor(self):
+        """A pasted or wrapped prompt often arrives with space in front of it.
+        Whitespace is not content, so the anchor has to see past it."""
+        base = "아니 그냥 이대로 둬"
+        for prompt in (base, "  " + base, "\t" + base, "\n" + base, " \n " + base):
+            with self.subTest(prompt=prompt):
+                slug = self.detect(prompt)
+                self.assertIsNotNone(slug, "%r was not detected" % prompt)
+                self.assertTrue(
+                    slug.startswith(FAMILY_SLUG_PREFIXES["A"]), slug
+                )
+
+    def test_punctuation_after_ani_still_fires(self):
+        """`아니,` and `아니.` are the same word with the pause written down."""
+        for prompt in ("아니, 그냥 이대로 둬", "아니. 그냥 이대로 둬", "아니! 그냥 이대로 둬"):
+            with self.subTest(prompt=prompt):
+                slug = self.detect(prompt)
+                self.assertIsNotNone(slug, "%r was not detected" % prompt)
+                self.assertTrue(
+                    slug.startswith(FAMILY_SLUG_PREFIXES["A"]), slug
+                )
+
+    def test_everyday_requests_stay_silent(self):
+        """The families are near-misses of ordinary words: `안 쓰게` next to
+        `안 쓰는`, `작동 안` next to `작동 방식`, `안 되는데` next to `되는지`.
+        An ordinary request must not carry a marker."""
+        for prompt in (
+            "로그인 버튼을 헤더에 추가해줘",
+            "이 함수 테스트 좀 짜줘",
+            "안 쓰는 import 정리해줘",
+            "작동 방식을 문서로 정리해줘",
+            "이거 되는지 확인만 해줘",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assert_silent(prompt)
+
+
+class FamilyNudgeTests(HookTestCase):
+    """C4, live half: a prompt from each family reaches Path B.
+
+    The vocabulary tests read the table; this one proves the whole process
+    still emits a well-formed marker for the widened families, because a slug
+    that never reaches stdout buys no recall at all.
+    """
+
+    def test_a_prompt_from_each_family_emits_a_nudge_carrying_its_family_slug(self):
+        for family, prompt in sorted(FAMILY_PROMPTS.items()):
+            with self.subTest(family=family):
+                code, out, err = self.run_hook(
+                    {"prompt": prompt, "session_id": "s-fam-" + family.lower(),
+                     "cwd": self.empty_dir}
+                )
+                self.assertEqual(code, 0)
+                self.assertEqual(err, "")
+                match = self.nudge_of(self.context_of(out))
+                self.assertEqual(match.group("sha"), sha8(prompt))
+                self.assertTrue(
+                    match.group("slug").startswith(FAMILY_SLUG_PREFIXES[family]),
+                    "family %s emitted %r" % (family, match.group("slug")),
+                )
 
 
 class RobustnessTests(HookTestCase):

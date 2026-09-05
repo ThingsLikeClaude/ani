@@ -26,6 +26,7 @@ from pathlib import Path
 TESTS_DIR = Path(__file__).resolve().parent
 REPO_DIR = TESTS_DIR.parent
 SCRIPT = REPO_DIR / "scripts" / "ani_bootstrap.py"
+HOOK = REPO_DIR / "hooks" / "ani_trigger.py"
 FIXTURE = TESTS_DIR / "fixtures" / "sample_transcript.jsonl"
 
 # The date every timestamp in the fixture uses. Tests that exercise the default
@@ -39,6 +40,15 @@ EN_QUOTE_FRAGMENT = "not what I asked"
 def load_script_module():
     """Import the miner as a module for unit-level contract tests."""
     spec = importlib.util.spec_from_file_location("ani_bootstrap_under_test", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_hook_module():
+    """Import the hook's detector so the miner can be held against it."""
+    sys.dont_write_bytecode = True  # keep hooks/ free of __pycache__
+    spec = importlib.util.spec_from_file_location("ani_trigger_for_bootstrap", HOOK)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -728,6 +738,234 @@ class TestInjectedTextSkipped(BootstrapTestCase):
         self.assertEqual(stat_value(digest, "Correction moments found"), 0)
         self.assertEqual(
             stat_value(digest, "Machine-injected user turns skipped"), 1)
+
+
+# ---------------------------------------------------------------------------
+# The rebuilt detection vocabulary
+# (docs/specs/2026-09-06-correction-detection-recall.md, C2 / C3 / C4)
+#
+# The slug prefix each family's entries carry. The hook owns the table; the
+# miner reads it, so these prefixes are what a mined moment is labelled with.
+# ---------------------------------------------------------------------------
+FAMILY_SLUG_PREFIXES = {
+    "A": "ko-ani-",       # sentence-initial 아니
+    "B": "ko-recur-",     # stated recurrence
+    "C": "ko-defect-",    # defect report
+    "D": "ko-verdict-",   # negative verdict
+    "E": "ko-reversal-",  # reversal
+}
+
+# One real correction per family, verbatim from the ground-truth F files.
+FAMILY_CORRECTIONS = {
+    "A": "아니 그냥 html 로 만들어서 열어",
+    "B": "이미지는 gpt 5.6 codex cli를 통해 받아오고(여러번 지적함,특히 책상같은거)",
+    "C": "프런트가 안되는데?",
+    "D": "신청 완료 저거 도장 내가 상세페이지에서 겪었던 슬롭임",
+    "E": "3456은 다시생각해보니까 일단 안쓰게될거같아",
+}
+
+# Inputs the two readers are compared on: every family, the guards that keep
+# Family A off ordinary Korean, the languages only the hook has entries for
+# today, and plain requests that must stay silent on both sides.
+AGREEMENT_SAMPLE = tuple(FAMILY_CORRECTIONS.values()) + (
+    # remaining ground-truth quotes
+    "아니 그게아니라 이걸 테스트 해봐야될거같은데 내가 교정한 순간에 진짜 생기는지",
+    "신청 폼도 입력박스도 그렇고 좀 대부분 AI 슬롭같아 페이크 3d랑 전반적으로 디자인을 다시해봐.",
+    "아니 근데 블렌더 힉스필드 브릿지 사용하고있는거아니었어?",
+    "아니 이거 중앙으로 바꿔줘 첫장면 그리고 design FRONTEND TASTE쓴거맞음??? 테크 느낌이",
+    "아니 너가 직접 개발서버 띄워서 알려줘.",
+    "굉장히 짧고 간결하게 눌러서 써야돼",
+    # ordinary Korean that opens with the same two syllables
+    "아니라서 지금은 못 해",
+    "아니면 다른 방법도 있을까?",
+    "아닌데 그건 좀 다른 얘기야",
+    "아니야 그거 맞아",
+    "아니요 괜찮습니다",
+    "방금 만든 컴포넌트 이름을 Card 아니 CardItem 으로 바꿔줘",
+    # entries that already exist in the hook
+    "그거 말고 다른 파일이라고",
+    "내 말은 배경색만 바꾸라는 거였어",
+    "왜 자꾸 같은 파일을 건드려",
+    "그거란 뜻이었네",
+    "No, that's not what I asked for - I meant the sidebar.",
+    "you misunderstood the requirement",
+    "いや、そうじゃなくて、左のカラムです",
+    "不是这个意思，我说的是背景色",
+    # ordinary requests
+    "로그인 버튼을 헤더에 추가해줘",
+    "안 쓰는 import 정리해줘",
+    "작동 방식을 문서로 정리해줘",
+    "Add a login button to the header, please.",
+)
+
+
+class TestOneTableTwoReaders(unittest.TestCase):
+    """C2: the hook and the miner detect the same thing, so they read the same
+    list.
+
+    Two tables is how a fix lands in one reader and not the other: a phrase
+    added for the live nudge silently never reaches the miner, and a sweep of
+    past transcripts under-reports against the detector the user actually runs.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.miner = load_script_module()
+        cls.hook = load_hook_module()
+
+    def test_the_miner_and_the_hook_agree_on_every_sample_input(self):
+        disagreements = []
+        for text in AGREEMENT_SAMPLE:
+            hook_slug = self.hook.detect_correction(text)
+            miner_hits = self.miner.is_correction(text)
+            if bool(miner_hits) != (hook_slug is not None):
+                disagreements.append(
+                    "%r -> hook=%r miner=%r" % (text, hook_slug, miner_hits)
+                )
+        self.assertEqual(
+            disagreements,
+            [],
+            "%d input(s) the two readers disagree on:\n  %s"
+            % (len(disagreements), "\n  ".join(disagreements)),
+        )
+
+    def test_the_miner_reports_the_slug_the_hook_would_emit(self):
+        """A mined moment names the family that caught it, in the same
+        vocabulary the live nudge uses, or the digest and the store cannot be
+        read against each other."""
+        for text in AGREEMENT_SAMPLE:
+            hook_slug = self.hook.detect_correction(text)
+            if hook_slug is None:
+                continue
+            with self.subTest(text=text):
+                self.assertIn(hook_slug, self.miner.is_correction(text))
+
+    def test_the_miner_keeps_no_phrase_table_of_its_own(self):
+        """The hook's table is canonical; the miner reads that list rather than
+        a second one that drifts away from it."""
+        miner_table = getattr(self.miner, "CORRECTION_PHRASES", None)
+        self.assertIsNotNone(miner_table, "the miner exposes no CORRECTION_PHRASES")
+        self.assertEqual(list(miner_table), list(self.hook.CORRECTION_PHRASES))
+
+
+class TestToolOnlyAgentContext(BootstrapTestCase):
+    """C3: `no_agent_context` relaxed to what it was written for.
+
+    The filter exists so the opening turn of a headless run cannot mine itself
+    a correction. It was implemented as "no assistant prose before this turn",
+    which is wider: an assistant turn made of tool calls alone produces no
+    prose and never reaches `messages`, so a user correcting an agent in the
+    middle of tool work looks exactly like an opening turn.
+    """
+
+    TOOL_ONLY = [
+        {
+            "type": "tool_use",
+            "id": "toolu_c3",
+            "name": "Edit",
+            "input": {"file_path": "app/theme.ts", "old_string": "a", "new_string": "b"},
+        }
+    ]
+
+    def test_a_tool_only_assistant_turn_counts_as_agent_context(self):
+        write_transcript(self.tmp / "projects" / "midwork" / "s.jsonl", [
+            make_entry("assistant", self.TOOL_ONLY, iso_days_ago(1)),
+            make_entry("user", "아니 그게 아니라 배경색만 바꾸라고", iso_days_ago(1)),
+        ])
+        digest = self.digest_of()
+        self.assertEqual(stat_value(digest, "Correction moments found"), 1)
+        self.assertEqual(
+            stat_value(digest, "Corrections with no preceding agent turn skipped"), 0
+        )
+        self.assertIn("배경색만 바꾸라고", digest)
+
+    def test_the_rescued_moment_carries_no_assistant_prose(self):
+        """A tool-only turn contributes presence, not text: there is nothing to
+        quote, and inventing something would put tool arguments in the store."""
+        write_transcript(self.tmp / "projects" / "midwork" / "s.jsonl", [
+            make_entry("assistant", self.TOOL_ONLY, iso_days_ago(1)),
+            make_entry("user", "아니 그게 아니라 배경색만 바꾸라고", iso_days_ago(1)),
+        ])
+        digest = self.digest_of()
+        context_lines = [
+            line for line in digest.splitlines()
+            if line.startswith("Assistant context immediately before")
+        ]
+        self.assertEqual(
+            context_lines,
+            ["Assistant context immediately before: (none in window)"],
+        )
+        leaks = [line for line in digest.splitlines() if "app/theme.ts" in line]
+        self.assertEqual(leaks, [], "tool arguments reached the digest")
+
+    def test_a_correction_that_opens_the_transcript_still_yields_nothing(self):
+        """The case the filter was written for. Relaxing it must not reach here:
+        a first turn has nothing before it, tool call or otherwise."""
+        write_transcript(self.tmp / "projects" / "headless" / "run.jsonl", [
+            make_entry("user", "아니 그게 아니라 배경색만 바꾸라고", iso_days_ago(1)),
+            make_entry("assistant", "배경색만 바꿨습니다.", iso_days_ago(1)),
+        ])
+        digest = self.digest_of()
+        self.assertEqual(stat_value(digest, "Correction moments found"), 0)
+        self.assertEqual(
+            stat_value(digest, "Corrections with no preceding agent turn skipped"), 1
+        )
+
+    def test_a_tool_only_turn_after_the_correction_does_not_rescue_it(self):
+        """Context is what came before. What the agent did next is not it."""
+        write_transcript(self.tmp / "projects" / "headless" / "run.jsonl", [
+            make_entry("user", "아니 그게 아니라 배경색만 바꾸라고", iso_days_ago(1)),
+            make_entry("assistant", self.TOOL_ONLY, iso_days_ago(1)),
+        ])
+        digest = self.digest_of()
+        self.assertEqual(stat_value(digest, "Correction moments found"), 0)
+        self.assertEqual(
+            stat_value(digest, "Corrections with no preceding agent turn skipped"), 1
+        )
+
+
+class TestFamiliesReachTheDigest(BootstrapTestCase):
+    """C4: the way in, end to end.
+
+    The chain the spec argues about — detected, becomes a moment, survives
+    clustering, appears in the digest with its slug — is a claim about how the
+    pieces connect, and until now nothing walked it. This is the miner's half,
+    which is the half that is code.
+    """
+
+    def install_one_correction_per_family(self):
+        stamp = iso_days_ago(1)
+        lines = []
+        for family, quote in sorted(FAMILY_CORRECTIONS.items()):
+            lines.append(make_entry(
+                "assistant", "요청하신 작업 %s 를 마쳤습니다." % family, stamp))
+            lines.append(make_entry("user", quote, stamp))
+        write_transcript(self.tmp / "projects" / "families" / "s.jsonl", lines)
+
+    def test_one_correction_from_every_family_becomes_a_moment(self):
+        self.install_one_correction_per_family()
+        digest = self.digest_of()
+        self.assertEqual(stat_value(digest, "Correction moments found"), 5)
+        self.assertEqual(
+            stat_value(digest, "Corrections with no preceding agent turn skipped"), 0
+        )
+        for family, quote in sorted(FAMILY_CORRECTIONS.items()):
+            with self.subTest(family=family):
+                self.assertIn(quote, digest)
+
+    def test_the_digest_names_the_family_that_caught_each_moment(self):
+        self.install_one_correction_per_family()
+        digest = self.digest_of()
+        matched = re.findall(r"- Matched hint\(s\): (.+)", digest)
+        self.assertEqual(
+            len(matched), 5,
+            "expected one hint line per moment; the five corrections are on "
+            "unrelated topics, so none of them should have clustered together",
+        )
+        joined = "\n".join(matched)
+        for family, prefix in sorted(FAMILY_SLUG_PREFIXES.items()):
+            with self.subTest(family=family):
+                self.assertIn(prefix, joined)
 
 
 if __name__ == "__main__":
