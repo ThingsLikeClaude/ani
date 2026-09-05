@@ -124,17 +124,10 @@ CORRECTION_PHRASES = (
     # corrections open with it. The two-phrase forms come first so a hit names
     # the sharper phrase; the bare interjection is anchored to the start of the
     # prompt because mid-sentence 아니 corrects the user's own words, not the
-    # agent's work.
+    # agent's work, and it sorts LAST among the Korean entries — see the note
+    # beside it at the end of this block.
     ("ko-ani-geuge-anira", r"아니[\s,]*그게\s*아니라"),
     ("ko-ani-geureon-tteusi", r"아니[\s,]*그런\s*뜻이"),
-    # Family A's only exclusion is 아니면: a conjunction proposing an
-    # alternative ("아니면 버셀 배포할까???"), and the first false positive
-    # anybody measured — 싸구려 against Family D's 구려 was the second.
-    # 아니야 / 아니요 / 아니지 opened four sentences in the window and every
-    # sampled one was a genuine correction, so no ending is guarded, and
-    # nothing keys on sentence mood — ground-truth quote #5 is a question and
-    # a genuine correction. The discriminator is word class.
-    ("ko-ani-muntu", r"^\s*아니(?!면)"),
     # Korean corrections that need no opening 아니.
     ("ko-geuge-anira", r"그게\s*아니라"),
     ("ko-anirago", r"아니라고"),
@@ -188,6 +181,23 @@ CORRECTION_PHRASES = (
     ("ko-reversal-dasi-saenggak", r"다시\s*생각"),
     ("ko-reversal-an-sseuge", r"안\s*쓰게"),
     ("ko-reversal-eopdeon-geollo", r"없던\s*걸로"),
+    # Family A, the bare interjection — the least specific Korean entry in the
+    # table, so it sorts last among them. It used to sit third, which meant any
+    # correction the user prefixed with 아니 was attributed to Family A even
+    # when a sharper entry also matched: "아니 여러번 말했잖아" is stated
+    # recurrence that opens with 아니, not an interjection that mentions
+    # recurrence. The nudge fired either way, so nothing was missed; what was
+    # lost is the per-family evidence the spec relies on to drop a noisy family
+    # later, biased toward A by an unknown amount.
+    #
+    # Family A's only exclusion is 아니면: a conjunction proposing an
+    # alternative ("아니면 버셀 배포할까???"), and the first false positive
+    # anybody measured — 싸구려 against Family D's 구려 was the second.
+    # 아니야 / 아니요 / 아니지 opened four sentences in the window and every
+    # sampled one was a genuine correction, so no ending is guarded, and
+    # nothing keys on sentence mood — ground-truth quote #5 is a question and
+    # a genuine correction. The discriminator is word class.
+    ("ko-ani-muntu", r"^\s*아니(?!면)"),
     # --- English (case-insensitive) ---------------------------------------
     # en/ja/zh were not measured — this user's corpus is Korean — and are kept
     # exactly as they were. Removing an unmeasured entry is a change with no

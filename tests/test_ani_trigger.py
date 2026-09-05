@@ -726,6 +726,132 @@ class DefectReportBoundaryTests(unittest.TestCase):
                 self.assertIsNone(slug, "%r fired %s" % (prompt, slug))
 
 
+# ---------------------------------------------------------------------------
+# Table order: which slug wins
+#
+# Each row is a prompt, every slug in the table that matches it, and the slug
+# the hook must emit. The middle column is written out rather than computed so
+# that a reordering can be read against it: order decides which of several
+# matches is reported and must never change how many there are.
+# ---------------------------------------------------------------------------
+ORDERING_CASES = (
+    (
+        "아니 여러번 말했잖아 이거 하지 말라고",
+        {"ko-ani-muntu", "ko-recur-yeoreobeon"},
+        "ko-recur-yeoreobeon",
+    ),
+    (
+        "아니 프런트가 안되는데?",
+        {"ko-ani-muntu", "ko-defect-an-doeneunde"},
+        "ko-defect-an-doeneunde",
+    ),
+    (
+        "아니 이거 완전 슬롭이야",
+        {"ko-ani-muntu", "ko-verdict-seullop"},
+        "ko-verdict-seullop",
+    ),
+    (
+        "아니 다시 생각해보니 없던 걸로",
+        {"ko-ani-muntu", "ko-reversal-dasi-saenggak", "ko-reversal-eopdeon-geollo"},
+        "ko-reversal-dasi-saenggak",
+    ),
+    (
+        "아니 그거 말고 다른 파일 고쳐줘",
+        {"ko-ani-muntu", "ko-geugeo-malgo"},
+        "ko-geugeo-malgo",
+    ),
+    (
+        "아니 내 말은 헤더만 바꾸라는 거였어",
+        {"ko-ani-muntu", "ko-nae-mareun"},
+        "ko-nae-mareun",
+    ),
+    (
+        "아니 그게 아니라 배경색만 바꾸라고",
+        {"ko-ani-muntu", "ko-ani-geuge-anira", "ko-geuge-anira"},
+        "ko-ani-geuge-anira",
+    ),
+    (
+        "아니 그냥 html 로 만들어서 열어",
+        {"ko-ani-muntu"},
+        "ko-ani-muntu",
+    ),
+)
+
+
+class TableOrderingTests(unittest.TestCase):
+    """The file's own rule, applied to its least specific entry.
+
+    `hooks/ani_trigger.py` says "Ordered most-specific first: the first match
+    wins". `^\\s*아니(?!면)` is two syllables that open a great many
+    corrections and it sat third, ahead of `그게 아니라`, `그거 말고`,
+    `내 말은` and all of families B–E, so every correction the user prefixed
+    with 아니 was attributed to Family A.
+
+    The cost is not a missed detection — the nudge fires either way. It is that
+    the per-family rates the spec publishes are biased toward A by an unknown
+    amount, and the mechanism the spec leans on, "a family that proves noisy can
+    be dropped on evidence", loses the evidence for the shadowed families. It
+    also splits the hook's reported attribution from the miner's, which lists
+    every match.
+
+    Zero of the 55 fires measured in the five-day window took this path, so this
+    is a latent defect: real, and not yet visible in the numbers.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.mod = load_trigger_module()
+        cls.table = [
+            (slug, re.compile(pattern, re.IGNORECASE))
+            for slug, pattern in cls.mod.CORRECTION_PHRASES
+        ]
+
+    def all_matches(self, prompt):
+        """Every slug that matches, independent of table order."""
+        return {slug for slug, regex in self.table if regex.search(prompt)}
+
+    def test_ordering_decides_which_slug_wins_and_never_whether_anything_fires(self):
+        """The half of a reordering that must not move.
+
+        Sorting the table differently changes the winner and nothing else. If
+        this drifts, the reordering removed or widened a match rather than
+        re-ranking one, and the rates the spec publishes stop being comparable
+        with the ones it was written from.
+        """
+        for prompt, expected, _winner in ORDERING_CASES:
+            with self.subTest(prompt=prompt):
+                self.assertEqual(self.all_matches(prompt), expected)
+
+    def test_a_correction_opening_with_ani_is_attributed_to_the_family_that_names_it(self):
+        """`아니 여러번 말했잖아` is stated recurrence that happens to open with
+        아니, not a bare interjection that happens to mention recurrence.
+
+        The last case is the control: when nothing more specific matches, the
+        bare interjection still wins and Family A still fires.
+        """
+        for prompt, _expected, winner in ORDERING_CASES:
+            with self.subTest(prompt=prompt):
+                self.assertEqual(self.mod.detect_correction(prompt), winner)
+
+    def test_the_bare_interjection_sorts_below_every_entry_it_can_shadow(self):
+        """Stated as a property of the table, so a new family added above the
+        interjection stays visible and one added below does not."""
+        slugs = [slug for slug, _pattern in self.mod.CORRECTION_PHRASES]
+        bare = slugs.index("ko-ani-muntu")
+        shadowed = [
+            slug for slug in slugs
+            if slug.startswith(("ko-geuge", "ko-geugeo", "ko-nae", "ko-anirago",
+                                "ko-raneun", "ko-recur-", "ko-defect-",
+                                "ko-verdict-", "ko-reversal-"))
+        ]
+        late = [slug for slug in shadowed if slugs.index(slug) > bare]
+        self.assertEqual(
+            late, [],
+            "%d entr(ies) more specific than the bare interjection sort below "
+            "it and can never win: %s" % (len(late), late),
+        )
+
+
 class FamilyNudgeTests(HookTestCase):
     """C4, live half: a prompt from each family reaches Path B.
 

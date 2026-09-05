@@ -197,6 +197,15 @@ the built table — one slug per firing turn, first match wins — and not the
 per-phrase probes the family rates above came from, so the two lists are not
 comparable entry by entry.
 
+Those attributions were taken while the bare interjection `^\s*아니(?!면)` sat
+third in the table, ahead of `그게 아니라`, `그거 말고`, `내 말은` and all of
+families B–E, so any correction the user prefixed with `아니` was counted as A
+even when a sharper entry also matched. The A figure above is therefore an
+upper bound and B–E lower bounds, by an amount nobody measured — 0 of the 55
+fires in the window took that path, so the bias is latent rather than visible.
+The bare interjection now sorts last among the Korean entries, which changes
+which slug is reported and never whether anything fires.
+
 5.78% is not under 4%, so the budget was missed. What the sample says is that
 the overshoot is not noise: reading the 79 fires in the window, most are genuine
 corrections. This user corrects roughly 6% of their turns. That is a fact about
