@@ -127,8 +127,9 @@ CORRECTION_PHRASES = (
     # agent's work.
     ("ko-ani-geuge-anira", r"아니[\s,]*그게\s*아니라"),
     ("ko-ani-geureon-tteusi", r"아니[\s,]*그런\s*뜻이"),
-    # The only exclusion is 아니면: a conjunction proposing an alternative
-    # ("아니면 버셀 배포할까???"), and the one false positive anybody measured.
+    # Family A's only exclusion is 아니면: a conjunction proposing an
+    # alternative ("아니면 버셀 배포할까???"), and the first false positive
+    # anybody measured — 싸구려 against Family D's 구려 was the second.
     # 아니야 / 아니요 / 아니지 opened four sentences in the window and every
     # sampled one was a genuine correction, so no ending is guarded, and
     # nothing keys on sentence mood — ground-truth quote #5 is a question and
@@ -170,7 +171,11 @@ CORRECTION_PHRASES = (
     ("ko-verdict-isanghae", r"이상해"),
     ("ko-verdict-byeolloya", r"별로야"),
     ("ko-verdict-chonseu", r"촌스"),
-    ("ko-verdict-guryeo", r"구려"),
+    # 구려 is the predicate "it's lousy"; 싸구려 is the noun "cheap junk", and
+    # a user saying the result must *not* look 싸구려 is passing the opposite
+    # verdict. Two of the 55 fires measured in the five-day window were this
+    # pattern inside 싸구려 in a pasted design document.
+    ("ko-verdict-guryeo", r"(?<!싸)구려"),
     # Family E - reversal (0.4/day). The user withdraws something they asked
     # for: "3456은 다시생각해보니까 일단 안쓰게될거같아".
     ("ko-reversal-dasi-saenggak", r"다시\s*생각"),

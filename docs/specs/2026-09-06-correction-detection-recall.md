@@ -123,7 +123,13 @@ measurement. `아니야`, `아니요` and `아니지` opened four sentences in t
 and every sampled one was a genuine correction. `아닌데`, `아닌가`, `아니었` and
 `아니라` opened none, so a guard for them is untested weight in a table that is
 read on every prompt. `아니면` is a conjunction proposing an alternative
-(`아니면 버셀 배포할까???`) and is the only measured false positive. The rule is
+(`아니면 버셀 배포할까???`) and is Family A's only exclusion. It was described
+here as *the* only measured false positive; that was wrong in the same corpus.
+Re-reading the 55 new-detector fires in the five-day window found a second:
+Family D's `구려` matching inside `싸구려` in a pasted design document, twice —
+the user saying the result must *not* look cheap, which is the opposite verdict.
+That entry now carries a `(?<!싸)` guard, so the table has two exclusions and
+two measured false positives, not one of each. The rule is
 therefore **sentence-initial `아니`, except `아니면`** — a lookahead on word
 class, not on sentence mood: ground-truth quote #5 is interrogative and a
 genuine correction, so a guard keyed on `?` would have been wrong. Measured

@@ -610,6 +610,31 @@ class NegativeVerdictBoundaryTests(unittest.TestCase):
                 slug = self.detect(prompt)
                 self.assertIsNone(slug, "%r fired %s" % (prompt, slug))
 
+    def test_guryeo_is_the_verdict_and_not_the_noun_it_hides_inside(self):
+        """`구려` is a predicate — "it's lousy". `싸구려` is a noun — "cheap
+        junk" — and a user saying something must *not* look 싸구려 is passing
+        the opposite verdict on the same work.
+
+        Two of the 55 fires measured over the user's five-day window are this
+        pattern matching 싸구려 inside a pasted design document, which is also
+        a turn that is a document rather than speech. The 아니면 guard beside
+        this one is no longer the only exclusion in the table.
+        """
+        for prompt in ("이 배너 진짜 구려", "폰트 조합 구려요", "구려 다시 해줘"):
+            with self.subTest(fires=prompt):
+                slug = self.detect(prompt)
+                self.assertIsNotNone(slug, "%r was not detected" % prompt)
+                self.assertTrue(
+                    slug.startswith(FAMILY_SLUG_PREFIXES["D"]), slug
+                )
+        for prompt in (
+            "기본값을 한 번 비틀어야 싸구려를 벗는다",
+            "싸구려 느낌 나지 않게 고급스럽게 만들어줘",
+        ):
+            with self.subTest(silent=prompt):
+                slug = self.detect(prompt)
+                self.assertIsNone(slug, "%r fired %s" % (prompt, slug))
+
 
 class DefectReportBoundaryTests(unittest.TestCase):
     """C1 precision, Family C: `작동 안` is 작동 plus the negation adverb.

@@ -47,7 +47,7 @@ slug are yours alone: real corrections that no adapter looks for.
 | Phrase | Hook slug | Note |
 | --- | --- | --- |
 | 아니 … (turn-initial) | `ko-ani-muntu` | Bare 아니 opening the turn — five of the eleven labelled corrections start this way. Turn-initial only; mid-sentence 아니 usually corrects the user's own words, not yours |
-| 아니면 … | *excluded* | **Not a correction.** A conjunction proposing an alternative ("아니면 버셀 배포할까?") — the one measured false positive, and the only exclusion in the hook |
+| 아니면 … | *excluded* | **Not a correction.** A conjunction proposing an alternative ("아니면 버셀 배포할까?") — the first measured false positive, and Family A's only exclusion |
 | 아니 그게 아니라 | `ko-ani-geuge-anira` | The canonical form; the protocol is named after it |
 | 그게 아니라 | `ko-geuge-anira` | Same, without the leading 아니 |
 | 아니 그런 뜻이 (아니고/아니라) | `ko-ani-geureon-tteusi` | Rejects the interpretation |
@@ -93,7 +93,7 @@ corrections are nothing but this.
 | 이상해 | `ko-verdict-isanghae` | |
 | 별로야 | `ko-verdict-byeolloya` | 별로 on its own is a degree adverb ("별로 안 급해"); only the predicate is a verdict |
 | 촌스(럽다) | `ko-verdict-chonseu` | |
-| 구려 | `ko-verdict-guryeo` | |
+| 구려 | `ko-verdict-guryeo` | Guarded against 싸구려: that is the noun "cheap junk", and a user asking for something *not* to look 싸구려 is the opposite verdict. The second measured false positive |
 
 ### E — reversal
 
