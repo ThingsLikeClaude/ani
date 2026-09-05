@@ -774,6 +774,44 @@ class DefectReportBoundaryTests(unittest.TestCase):
                 slug = self.detect(prompt)
                 self.assertIsNone(slug, "%r fired %s" % (prompt, slug))
 
+    def test_the_verb_class_covers_the_prospective_of_hada_and_the_common_defect_verbs(self):
+        """`(?:하|해|한|함|했|되|된|됨|됐|돼|될)` covers every conjugation of
+        되다 but not the prospective of 하다 — `할` is missing. Two of the
+        seven corpus-wide `ko-defect-jakdong-an` fires were `작동안할수도있을`,
+        and both went silent when the class was narrowed to close the sibling
+        defect above.
+
+        Also silent for the same reason, and all plausible defect reports:
+        `작동 안 시킴` (causative 시키다), `작동 안 먹혀` (passive 먹히다, the
+        ordinary way to say a control doesn't take), `작동 안 뜸` (뜨다,
+        "doesn't show up"), and `작동 안 됬어` (`됬` is the standard misspelling
+        of `됐`). None of these shares a first syllable with 안정성/안내/안전/
+        안심/안녕, so widening the class cannot reopen the bare `작동\\s*안`
+        defect the class exists to guard against.
+        """
+        for prompt in (
+            "작동안할수도있을것같아요",
+            "작동 안 시킴",
+            "작동 안 먹혀",
+            "작동 안 뜸",
+            "작동 안 됬어",
+        ):
+            with self.subTest(fires=prompt):
+                slug = self.detect(prompt)
+                self.assertIsNotNone(slug, "%r was not detected" % prompt)
+                self.assertTrue(
+                    slug.startswith(FAMILY_SLUG_PREFIXES["C"]), slug
+                )
+        for prompt in (
+            "작동 안정성을 점검해줘",
+            "작동 안내 문서를 작성해줘",
+            "작동 안전장치가 필요한지 봐줘",
+            "이 스크립트 작동\n안녕하세요 오늘도 부탁드립니다",
+        ):
+            with self.subTest(silent=prompt):
+                slug = self.detect(prompt)
+                self.assertIsNone(slug, "%r fired %s" % (prompt, slug))
+
 
 # ---------------------------------------------------------------------------
 # Table order: which slug wins

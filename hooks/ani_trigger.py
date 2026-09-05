@@ -173,7 +173,15 @@ CORRECTION_PHRASES = (
     # and the next one opening with 안녕하세요 reported a defect. Both this
     # spec and references/triggers.md always described the entry as 작동 안
     # with the verb after it.
-    ("ko-defect-jakdong-an", r"작동\s*안\s*(?:하|해|한|함|했|되|된|됨|됐|돼|될)"),
+    #
+    # The verb class covered every conjugation of 되다 but not the
+    # prospective of 하다 (할), which cost two of the seven corpus-wide fires
+    # here — both 작동안할수도있을. Also added: 시킴 (causative 시키다), 먹혀
+    # (passive 먹히다, the ordinary way to say a control doesn't take), 뜸
+    # (뜨다, "doesn't show up"), and 됬 (the standard misspelling of 됐). None
+    # of these shares a first syllable with 안정성/안내/안전/안심/안녕, so the
+    # widening cannot reopen the bare 작동\s*안 defect above.
+    ("ko-defect-jakdong-an", r"작동\s*안\s*(?:하|해|한|함|했|할|되|된|됨|됐|됬|돼|될|시킴|먹혀|뜸)"),
     # Family D - negative verdict (4.6/day). The most user-specific family in
     # the table and the first candidate for per-user tuning, kept because two
     # of the eleven labelled corrections are nothing but this. 별로 on its own
