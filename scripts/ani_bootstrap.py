@@ -96,6 +96,13 @@ POSITIVE_ACK_PHRASES = [
 STOPWORDS = {
     # Korean — very common filler that names nothing
     "이거", "저거", "이건", "저건", "해줘", "해라", "하라고", "그리고",
+    # 그게 / 그거 are the 그- half of the demonstratives already listed
+    # beside them, and they name exactly as much as 이거 does: nothing. They
+    # were shadowed only as a side effect of the derivation enumerating every
+    # fragment of 그게\s*아니라 and 그거\s*말고, which is the wrong reason —
+    # word class is this list's job, and the derived list now holds only the
+    # words an entry matches end to end.
+    "그게", "그거",
     "근데", "그냥", "진짜", "지금", "그대로", "이렇게", "저렇게", "여기",
     "거기",
     # English — trigger fragments plus stopwords. The derivation below reads
@@ -159,23 +166,28 @@ def _expand_alternations(pattern: str) -> list:
 
 
 def _surface_forms(pattern: str) -> set:
-    """Every Hangul run of >= 2 syllables one table entry can match.
+    """Every Hangul word of >= 2 syllables one entry matches end to end.
 
-    A joint may be typed as a space or not typed at all, so both readings
-    count: ``여러\\s*번\\s*말했`` yields 여러번, 번말했, 여러번말했 and the
-    pieces themselves. Anything that is neither Hangul nor a joint is regex
-    scaffolding and breaks the phrase outright.
+    A joint is something this user does not type, so ``여러\\s*번\\s*말했``
+    is the single word 여러번말했. The pieces along the way — 여러, 번말,
+    여러번 — are half a pattern, and no entry matches any of them on its own.
+    They must not be shadowed: the list is prefix-matched, so a fragment is
+    a standing ban on every word that starts with it, and 작동 or 다시 alone
+    bans 작동방식, 작동원리, 다시배포, 여러파일, 지적재산권 — 696 distinct
+    tokens of ordinary vocabulary across this user's own corpus, none of
+    which the table can match and every one of which is a keyword the
+    clusterer could have used.
+
+    Anything that is neither Hangul nor a joint is regex scaffolding and
+    breaks the phrase outright.
     """
     forms = set()
     body = _JOINT_RE.sub(_JOINT_MARK, _LOOKAROUND_RE.sub("", pattern))
     for branch in _expand_alternations(body):
         for piece in re.split("[^가-힣" + _JOINT_MARK + "]+", branch):
-            chunks = [chunk for chunk in piece.split(_JOINT_MARK) if chunk]
-            for start in range(len(chunks)):
-                for stop in range(start + 1, len(chunks) + 1):
-                    form = "".join(chunks[start:stop])
-                    if len(form) >= 2:
-                        forms.add(form)
+            form = piece.replace(_JOINT_MARK, "")
+            if len(form) >= 2:
+                forms.add(form)
     return forms
 
 

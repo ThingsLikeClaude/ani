@@ -922,6 +922,19 @@ class TestOneTableTwoReaders(unittest.TestCase):
 # `슬롭임` from #8. Each pairs a real prompt with the token that must not
 # survive `tokenize` and go on to name a cluster.
 # ---------------------------------------------------------------------------
+# Ordinary vocabulary of this user's own corpus that merely *starts* like a
+# trigger phrase. Every one of these was swallowed while the shadow list held
+# the sub-runs a `\s*` joint splits a pattern into: 작동 (from 작동 안 하는데),
+# 다시 (다시 생각), 여러 / 지적 (여러 번 지적했), 계속, 생각, 안된. A keyword
+# the clusterer can never use is a silent loss, and these are domain words, not
+# trigger words — no entry in the table matches any of them.
+DOMAIN_VOCABULARY_THE_TABLE_DOES_NOT_MATCH = (
+    "작동방식", "작동원리", "작동환경", "작동확인", "작동순서",
+    "다시배포", "다시시도", "다시작성", "다시빌드",
+    "여러파일", "여러개", "계속배포", "지적재산권", "생각정리",
+    "안된메일", "말씀",
+)
+
 TYPED_TRIGGER_TOKENS = (
     ("이거 진짜 안됨 다시 고쳐줘", "안됨"),
     ("3456은 다시생각해보니까 일단 안쓰게될거같아", "다시생각해보니까"),
@@ -931,6 +944,11 @@ TYPED_TRIGGER_TOKENS = (
     ("왜자꾸 같은 실수를 해", "왜자꾸"),
     ("또그러네 진짜", "또그러네"),
     ("신청 완료 저거 도장 내가 상세페이지에서 겪었던 슬롭임", "슬롭임"),
+    # Korean is agglutinative and the shadow list is prefix-matched for that
+    # reason: narrowing it to the forms an entry matches end to end must not
+    # cost the endings those forms wear.
+    ("로그인 안됨니다 다시 봐주세요", "안됨니다"),
+    ("작동안하는데요 이거", "작동안하는데요"),
 )
 
 # The oracle: what a table entry can actually match, read out of the regex
@@ -1189,6 +1207,46 @@ class TestTriggerVocabularyNeverBecomesAKeyword(unittest.TestCase):
                     % (token, sorted(survivors)),
                 )
 
+    def test_nothing_in_the_shadow_list_is_a_fragment_no_entry_can_match(self):
+        """A half-pattern has no business suppressing anything.
+
+        `\s*` joints tempt a derivation into enumerating every contiguous
+        sub-run of the pieces it splits a pattern into, which yields strings
+        like 작동, 다시, 생각, 하셨 — none of which any entry matches on its
+        own. Prefix-matched, each of those is a standing ban on a whole family
+        of ordinary words, and a keyword the clusterer can never use is a loss
+        that never announces itself.
+
+        The oracle is the regex engine: a form belongs in the list only if some
+        entry consumes it whole.
+        """
+        table = self.hook.CORRECTION_PHRASES
+        fragments = sorted(
+            form
+            for form in self.miner.TRIGGER_SURFACE_FORMS
+            if not any(re.fullmatch(pattern, form) for _slug, pattern in table)
+        )
+        self.assertEqual(
+            fragments, [],
+            "%d of the %d shadowed forms are fragments no table entry matches "
+            "end to end, and each bans every word that starts with it:\n  %s"
+            % (len(fragments), len(self.miner.TRIGGER_SURFACE_FORMS),
+               ", ".join(fragments)),
+        )
+
+    def test_domain_vocabulary_that_only_starts_like_a_trigger_survives(self):
+        """The other half of the same invariant, stated as behaviour."""
+        swallowed = [
+            word
+            for word in DOMAIN_VOCABULARY_THE_TABLE_DOES_NOT_MATCH
+            if self.miner.is_trigger_vocabulary(word) or not self.miner.tokenize(word)
+        ]
+        self.assertEqual(
+            swallowed, [],
+            "%d ordinary word(s) can never name a cluster: %s"
+            % (len(swallowed), ", ".join(swallowed)),
+        )
+
     def test_a_trigger_word_carrying_a_korean_ending_is_still_a_trigger_word(self):
         """`다시생각` is in the table; `다시생각해보니까` is what was typed.
 
@@ -1232,6 +1290,33 @@ class TestTriggerWordCannotBindACluster(BootstrapTestCase):
             with self.subTest(keywords=line):
                 self.assertNotIn(
                     "안됨", [k.strip() for k in line.split(",")],
+                    "the trigger word became a cluster keyword",
+                )
+
+    def test_the_trigger_word_cannot_bind_a_cluster_while_wearing_an_ending(self):
+        """The same phantom cluster, spelled the way people actually type.
+
+        Narrowing the shadow list to the forms an entry matches end to end must
+        not narrow it to *exact* forms: 안됨 has to keep catching 안됨니다, or
+        F1 reopens on the first polite spelling of the same complaint.
+        """
+        write_transcript(self.tmp / "projects" / "phantom-ending" / "s.jsonl", [
+            make_entry("assistant", "로그인 화면을 다시 배포했습니다", iso_days_ago(1)),
+            make_entry("user", "로그인 안됨니다", iso_days_ago(1)),
+            make_entry("assistant", "차트 렌더러를 교체했습니다", iso_days_ago(1)),
+            make_entry("user", "차트 안됨니다", iso_days_ago(1)),
+        ])
+        digest = self.digest_of()
+        self.assertEqual(stat_value(digest, "Correction moments found"), 2)
+        self.assertEqual(
+            stat_value(digest, "Clusters formed"), 2,
+            "the trigger word bound two unrelated corrections once it wore an "
+            "ending:\n%s" % digest,
+        )
+        for line in re.findall(r"- Suggested keywords: (.+)", digest):
+            with self.subTest(keywords=line):
+                self.assertNotIn(
+                    "안됨니다", [k.strip() for k in line.split(",")],
                     "the trigger word became a cluster keyword",
                 )
 
