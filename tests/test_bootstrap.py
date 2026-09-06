@@ -933,25 +933,114 @@ TYPED_TRIGGER_TOKENS = (
     ("신청 완료 저거 도장 내가 상세페이지에서 겪었던 슬롭임", "슬롭임"),
 )
 
-# Regex scaffolding that stands between the author's source and the user's
-# keystrokes. Stripping the first two and collapsing the third is what turns
-# `안\s*됨` back into the `안됨` somebody typed.
-_LOOKAROUND_RE = re.compile(r"\(\?<?[=!][^()]*\)")
-_JOINT_RE = re.compile(r"\\s[*+?]|\[[^\]]*\\s[^\]]*\][*+?]")
-_ALTERNATION_RE = re.compile(r"\(\?:([^()]+)\)")
+# The oracle: what a table entry can actually match, read out of the regex
+# itself
+#
+# The miner derives its shadow list by string surgery on the pattern source —
+# strip the lookarounds, collapse the joints, expand the alternations. A test
+# that repeats that surgery inherits every one of its blind spots: a group
+# syntax the miner's hand-rolled `_ALTERNATION_RE` does not recognise is a
+# group syntax the test does not recognise either, and the pair agree loudly
+# about the wrong answer. That is exactly how a plain `(a|b)` slipped through.
+#
+# So the oracle here does not read the pattern as text at all. It reads the
+# parse tree Python's own regex engine builds from it, and enumerates the
+# strings that tree can produce with every joint typed closed — which is how
+# this user types. The two derivations share no code and no syntax table, so
+# a blind spot in one shows up as a disagreement rather than as silence.
+try:                                    # 3.11 renamed sre_parse
+    import re._parser as _re_parser
+except ImportError:                     # pragma: no cover - older interpreters
+    import sre_parse as _re_parser
+
+_ORACLE_BREAK = "\x01"                  # a hole no typed form may span
+_HANGUL_FORM = re.compile(r"[가-힣]{2,}\Z")
 
 
-def expand_alternations(pattern):
-    """`(?:a|b)x` -> ['ax', 'bx'] — one branch per phrase the entry can match."""
-    match = _ALTERNATION_RE.search(pattern)
-    if not match:
-        return [pattern]
-    branches = []
-    for choice in match.group(1).split("|"):
-        branches.extend(expand_alternations(
-            pattern[: match.start()] + choice + pattern[match.end():]
-        ))
-    return branches
+def _oracle_cross(prefixes, suffixes):
+    return [prefix + suffix for prefix in prefixes for suffix in suffixes]
+
+
+def _oracle_walk(sequence):
+    """Every string this parsed sub-pattern matches, joints typed closed."""
+    out = [""]
+    for op, av in sequence:
+        name = str(op)
+        if name == "LITERAL":
+            out = _oracle_cross(out, [chr(av)])
+        elif name == "BRANCH":
+            out = _oracle_cross(
+                out, [s for alt in av[1] for s in _oracle_walk(alt)]
+            )
+        elif name == "SUBPATTERN":       # (x), (?:x) when kept, (?P<n>x)
+            out = _oracle_cross(out, _oracle_walk(av[3]))
+        elif name in ("MAX_REPEAT", "MIN_REPEAT"):
+            low, _high, item = av
+            # `\s*` is a joint: this user types it closed, so zero is the
+            # reading that matters. A mandatory repeat still contributes.
+            out = _oracle_cross(out, [""] if low == 0 else _oracle_walk(item))
+        elif name == "IN":               # single-char alternations fold to this
+            kinds = {str(kind) for kind, _value in av}
+            if kinds == {"LITERAL"}:
+                out = _oracle_cross(out, [chr(value) for _kind, value in av])
+            else:
+                out = _oracle_cross(out, [_ORACLE_BREAK])
+        elif name in ("AT", "ASSERT", "ASSERT_NOT"):
+            continue                     # zero-width: anchors and lookarounds
+        else:
+            out = _oracle_cross(out, [_ORACLE_BREAK])
+    return out
+
+
+def typed_forms_of(pattern):
+    """The Hangul words a single table entry matches end to end."""
+    return {
+        form
+        for form in _oracle_walk(_re_parser.parse(pattern))
+        if _HANGUL_FORM.match(form)
+    }
+
+
+def typed_forms_of_table(table):
+    forms = set()
+    for _slug, pattern in table:
+        forms |= typed_forms_of(pattern)
+    return forms
+
+
+# A family a future edit could plausibly add, written three ways. Only the
+# middle one is the syntax the table happens to use today; the other two are
+# what somebody reaching for an alternation writes without thinking about it.
+FUTURE_FAMILY_SYNTAXES = (
+    ("plain capturing group", r"(왜|뭐)\s*이래"),
+    ("non-capturing group", r"(?:왜|뭐)\s*이래"),
+    ("named group", r"(?P<waeirae>왜|뭐)\s*이래"),
+)
+
+
+def miner_reading_table_plus(entry):
+    """A fresh miner whose canonical table carries one extra entry.
+
+    The miner imports the hook's table and derives its shadow list at import
+    time, so a new family can only be exercised by re-importing both. The
+    hook module is published under the name the miner imports, mutated, and
+    withdrawn again, which leaves every other test reading the real table.
+    """
+    hook = load_hook_module()
+    hook.CORRECTION_PHRASES = tuple(hook.CORRECTION_PHRASES) + (entry,)
+    hook._COMPILED_PHRASES = tuple(
+        (slug, re.compile(pattern, re.IGNORECASE))
+        for slug, pattern in hook.CORRECTION_PHRASES
+    )
+    previous = sys.modules.get("ani_trigger")
+    sys.modules["ani_trigger"] = hook
+    try:
+        return load_script_module()
+    finally:
+        if previous is None:
+            sys.modules.pop("ani_trigger", None)
+        else:
+            sys.modules["ani_trigger"] = previous
 
 
 class TestTriggerVocabularyNeverBecomesAKeyword(unittest.TestCase):
@@ -973,9 +1062,11 @@ class TestTriggerVocabularyNeverBecomesAKeyword(unittest.TestCase):
     that the resulting word, and the same word with a Korean ending attached,
     both come back from `tokenize` as nothing.
 
-    The derivation is written out here as well as in the miner on purpose: a
-    miner whose derivation silently narrowed would still satisfy a test that
-    asked the miner what to check.
+    Nothing here re-implements the miner's derivation. The forms are read out
+    of the parse tree Python builds from each pattern (`typed_forms_of`), so a
+    miner whose derivation silently narrowed — or never handled a group syntax
+    in the first place — disagrees with the oracle instead of being confirmed
+    by a copy of its own blind spot.
     """
 
     @classmethod
@@ -989,14 +1080,7 @@ class TestTriggerVocabularyNeverBecomesAKeyword(unittest.TestCase):
         The hook's table is the source because it is the canonical one (C2);
         after the miner imports it, this reads the same list either way.
         """
-        forms = set()
-        for _slug, pattern in self.hook.CORRECTION_PHRASES:
-            body = _JOINT_RE.sub("", _LOOKAROUND_RE.sub("", pattern))
-            for branch in expand_alternations(body):
-                for run in re.findall(r"[가-힣]+", branch):
-                    if len(run) >= 2:
-                        forms.add(run)
-        return sorted(forms)
+        return sorted(typed_forms_of_table(self.hook.CORRECTION_PHRASES))
 
     def test_the_derivation_reads_the_typed_form_and_not_the_regex_source(self):
         """Guards the guard.
@@ -1042,6 +1126,68 @@ class TestTriggerVocabularyNeverBecomesAKeyword(unittest.TestCase):
             "%d trigger word(s) survive tokenisation and can name a cluster:"
             "\n  %s" % (len(leaked), "\n  ".join(leaked)),
         )
+
+    def test_the_derivation_covers_every_form_an_independent_oracle_finds(self):
+        """The miner's string surgery must not be narrower than the regex.
+
+        Held entry by entry so the failure names the pattern that defeated the
+        derivation rather than a bare set difference.
+        """
+        for slug, pattern in self.hook.CORRECTION_PHRASES:
+            with self.subTest(slug=slug):
+                missed = sorted(
+                    typed_forms_of(pattern) - self.miner._surface_forms(pattern)
+                )
+                self.assertEqual(
+                    missed, [],
+                    "%s (%r) matches %s, and the miner's derivation does not "
+                    "produce %s of them" % (slug, pattern, missed, len(missed)),
+                )
+
+    def test_the_derivation_reads_the_group_syntaxes_a_future_entry_may_use(self):
+        """`(a|b)` is the most ordinary way to write an alternation.
+
+        The table happens to use `(?:a|b)` throughout, so a derivation that
+        only knows that one spelling looks correct until the day somebody adds
+        a family the plain way — and then its trigger words leak into cluster
+        keywords with no test moving.
+        """
+        for label, pattern in FUTURE_FAMILY_SYNTAXES:
+            with self.subTest(syntax=label):
+                self.assertEqual(
+                    sorted(typed_forms_of(pattern)), ["뭐이래", "왜이래"],
+                    "the oracle itself is wrong for %s" % label,
+                )
+                missed = sorted(
+                    typed_forms_of(pattern) - self.miner._surface_forms(pattern)
+                )
+                self.assertEqual(
+                    missed, [],
+                    "an entry written as a %s (%r) leaves %s underived"
+                    % (label, pattern, missed),
+                )
+
+    def test_a_family_written_with_a_plain_group_still_cannot_name_a_cluster(self):
+        """The whole chain, on a table that carries the future family.
+
+        The derivation runs at import, so this is the only way to show the
+        behaviour rather than the intermediate list: a new entry, a real
+        `tokenize`, and the typed word it must swallow.
+        """
+        miner = miner_reading_table_plus(("ko-new-waeirae", r"(왜|뭐)\s*이래"))
+        self.assertEqual(
+            miner.CORRECTION_PHRASES[-1][0], "ko-new-waeirae",
+            "the injected family never reached the miner",
+        )
+        for token in ("왜이래", "뭐이래"):
+            with self.subTest(token=token):
+                survivors = miner.tokenize("%s 이거 배경색이 깨졌어" % token)
+                self.assertNotIn(
+                    token, survivors,
+                    "%r survived tokenisation -> %s; two unrelated corrections "
+                    "that both open with it now cluster on the trigger word"
+                    % (token, sorted(survivors)),
+                )
 
     def test_a_trigger_word_carrying_a_korean_ending_is_still_a_trigger_word(self):
         """`다시생각` is in the table; `다시생각해보니까` is what was typed.

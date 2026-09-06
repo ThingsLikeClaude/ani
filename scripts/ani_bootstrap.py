@@ -131,12 +131,20 @@ STOPWORDS = {
 # token that starts with a trigger form is that trigger word wearing one.
 _LOOKAROUND_RE = re.compile(r"\(\?<?[=!][^()]*\)")
 _JOINT_RE = re.compile(r"\\s[*+?]|\[[^\]]*\\s[^\]]*\][*+?]")
-_ALTERNATION_RE = re.compile(r"\(\?:([^()]+)\)")
+# Every group spelling an alternation may arrive in, not just the one the
+# table happens to use today. `(?:a|b)` is a style choice; `(a|b)` is what
+# somebody writes without thinking about it, and a derivation that only
+# knows the first reads such an entry as scaffolding and shadows none of
+# its words. The lookarounds are already gone by the time this runs, and
+# the `(?!\?)` guard keeps every other `(?...)` construct — inline flags,
+# comments, backreferences — from being mistaken for a group whose
+# contents are something a user types.
+_ALTERNATION_RE = re.compile(r"(?<!\\)\((?:\?:|\?P<[^>]*>)?(?!\?)([^()]*)\)")
 _JOINT_MARK = "\x00"
 
 
 def _expand_alternations(pattern: str) -> list:
-    """``(?:a|b)x`` -> ``['ax', 'bx']``: one branch per phrase the entry matches."""
+    """``(?:a|b)x``, ``(a|b)x`` -> ``['ax', 'bx']``: one branch per phrase."""
     match = _ALTERNATION_RE.search(pattern)
     if not match:
         return [pattern]
