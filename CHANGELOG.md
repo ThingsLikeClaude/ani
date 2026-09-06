@@ -5,6 +5,49 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-09-06
+
+### Fixed
+
+- **The correction detector noticed 9% of corrections.** ani's entry point is a detector,
+  and nothing reaches the store that it did not first notice. Measured against eleven F
+  files whose `trigger_quote` a live session had already judged to be a correction, it
+  caught one. That number is the root cause of three symptoms reported separately:
+  corrections that never accumulate, F files that sit `captured` and never compile, and a
+  store holding 2 S after five days. The vocabulary is rebuilt around five families found
+  by scanning real transcripts — sentence-initial `아니`, stated recurrence, defect report,
+  negative verdict, reversal — each carrying its measured rate. Recall goes 1/11 to 10/11,
+  and the nudge fires 15.2 times a day instead of 1.4, on 5.6% of typed turns. The
+  remaining miss is a bare directive with no correction marker, left deliberately: catching
+  it means firing on every instruction a user gives. Two other suspects were measured and
+  ruled out — the context budget uses 8% of its 6 KiB, and the layer split already exists.
+
+- **Trigger vocabulary could name the cluster it caught.** The bootstrap miner suggests
+  `keywords` per cluster, and the word that caught a moment was eligible to become the word
+  that named it, so two unrelated corrections bound together on `안됨` alone and the digest
+  reported a recurrence that never happened. `STOPWORDS` is derived from the phrase table
+  itself, so a family cannot be added without its typed forms being suppressed.
+
+- **A correction made mid-tool-work looked like a transcript's opening turn.**
+  `collect_moments` drops a correction with no preceding assistant turn, which is right for
+  a headless run's first turn. But an assistant turn that was nothing but tool calls never
+  reaches `messages`, so the filter was wider than its reason. An assistant *entry* now
+  counts as context; the quote and the stored context still come from prose.
+
+### Changed
+
+- **One phrase table, two readers.** The hook owned 19 compiled regexes and the miner kept
+  its own 14 literal substrings; they disagreed, which is how a fix lands in one and not
+  the other. The miner imports the hook's table. The hook's form wins because
+  sentence-initial anchoring cannot be written as a literal substring.
+
+- **The skill description covers all five correction families.** Its nine example phrases
+  were drawn from the same table that measured 9% recall, so the layer meant to catch what
+  the regexes missed shared their blind spot. `프런트가 안되는데?` is not a rephrasing of
+  "no, that's not it" — it is a symptom report, and nothing told the model to treat it as a
+  correction. A test pins that a family cannot be added to the table while the description
+  is left behind.
+
 ## [0.3.1] - 2026-09-02
 
 ### Changed
