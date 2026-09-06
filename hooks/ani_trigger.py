@@ -103,21 +103,124 @@ HINT_SENTENCE = (
     "before acting."
 )
 
-# Canonical correction phrases. Ordered most-specific first: the first match
-# wins and supplies ``pattern=<slug>``. These are hints, not the protocol —
-# semantic recognition by the model (P5) remains the real matcher.
+# Canonical correction phrases — the one table (spec C2). ``scripts/
+# ani_bootstrap.py`` imports this list rather than keeping a second one, so a
+# phrase added for the live nudge reaches the miner in the same edit.
+#
+# Rebuilt 2026-09-06 from measurement, not from taste: the previous table was
+# scored against the eleven ``trigger_quote`` values the store itself had
+# labelled as corrections and found one of them (9% recall). The Korean
+# entries below are the five families that measurement found, each carrying
+# its observed rate, with the slug prefix that makes a hit attributable —
+# a family that proves noisy can then be dropped on evidence.
+#
+# Ordered most-specific first: the first match wins and supplies
+# ``pattern=<slug>``. These are hints, not the protocol — semantic recognition
+# by the model (P5) remains the real matcher, and precision lives downstream in
+# Path B's RESTATE step, which is what makes a wide net cheap here.
 CORRECTION_PHRASES = (
-    # Korean
+    # --- Korean -----------------------------------------------------------
+    # Family A - sentence-initial 아니 (5.2/day). Five of the eleven labelled
+    # corrections open with it. The two-phrase forms come first so a hit names
+    # the sharper phrase; the bare interjection is anchored to the start of the
+    # prompt because mid-sentence 아니 corrects the user's own words, not the
+    # agent's work, and it sorts LAST among the Korean entries — see the note
+    # beside it at the end of this block.
     ("ko-ani-geuge-anira", r"아니[\s,]*그게\s*아니라"),
     ("ko-ani-geureon-tteusi", r"아니[\s,]*그런\s*뜻이"),
+    # Korean corrections that need no opening 아니.
     ("ko-geuge-anira", r"그게\s*아니라"),
     ("ko-anirago", r"아니라고"),
     ("ko-geugeo-malgo", r"그거\s*말고"),
     ("ko-raneun-tteusieosseo", r"(?:라는|란)\s*뜻이었"),
     ("ko-nae-mareun", r"내\s*말은"),
-    ("ko-wae-jakku", r"왜\s*자꾸"),
-    ("ko-tto-geureone", r"또\s*그러네"),
-    # English (case-insensitive)
+    # Family B - stated recurrence (0.6/day). The rarest family and the most
+    # valuable: the user is saying the recurrence out loud, which is the one
+    # signal that proves ``recurrence`` without inference. 여러번 alone is an
+    # ordinary frequency adverb, so it must be paired with a speech verb — a
+    # request to run something several times is not a complaint that something
+    # was said several times.
+    #
+    # A bare one-syllable 말|얘기|지적 does not do that job: 말 is also all of
+    # 말고 ("instead of") and the front of every present-tense 말하다, so
+    # "여러 번 말고 한 번에" and "계속 말하면서 잡아야하니?" landed in the
+    # rarest family in the table. What makes a complaint a complaint is that
+    # the saying already happened, which is how references/triggers.md has
+    # always described the family: 말했 / 지적함 / 얘기했 / 말씀.
+    #
+    # 씀 alone is not that verb, though: 말+씀 spells the honorific noun 말씀
+    # no matter what follows, so a bare 씀 fired on any trailing tense —
+    # 말씀해주세요, 말씀하세요, 말씀 부탁드립니다, 말씀 많이 하시던데 — none of
+    # which claim a correction was already stated. 말씀드렸/말씀드리는데 does,
+    # and there 씀 is immediately followed by 드, so that shape is required
+    # instead. 하셨 has the same problem from the other direction: the
+    # honorific marks the *agent's* past action, so "지적하셨듯이" credits the
+    # agent for a point it already made rather than complaining the agent
+    # needs to be told again — 듯이 is what turns it into a citation, so only
+    # that combination is excluded.
+    ("ko-recur-yeoreobeon", r"여러\s*번\s*(?:말|얘기|지적)\s*(?:했|함|하셨(?!듯이)|하잖|씀\s*드)"),
+    ("ko-recur-jeonedo", r"(?:전에도|계속)\s*(?:말|얘기|지적)\s*(?:했|함|하셨(?!듯이)|하잖|씀\s*드)"),
+    ("ko-recur-akkado", r"아까도"),
+    ("ko-recur-wae-jakku", r"왜\s*자꾸"),
+    ("ko-recur-tto-geureo", r"또\s*그러"),
+    # Family C - defect report (4.8/day). The user reports the symptom instead
+    # of naming the mistake: "프런트가 안되는데?".
+    ("ko-defect-an-doeneunde", r"안\s*되는데"),
+    ("ko-defect-an-doem", r"안\s*됨"),
+    # 안 is the negation adverb only when a verb follows it. Bare 작동\s*안
+    # fired on 작동 followed by any word starting with 안 — 안정성, 안내,
+    # 안전, 안심 — and \s* matches a newline, so a paragraph ending in 작동
+    # and the next one opening with 안녕하세요 reported a defect. Both this
+    # spec and references/triggers.md always described the entry as 작동 안
+    # with the verb after it.
+    #
+    # The verb class covered every conjugation of 되다 but not the
+    # prospective of 하다 (할), which cost two of the seven corpus-wide fires
+    # here — both 작동안할수도있을. Also added: 시킴 (causative 시키다), 먹혀
+    # (passive 먹히다, the ordinary way to say a control doesn't take), 뜸
+    # (뜨다, "doesn't show up"), and 됬 (the standard misspelling of 됐). None
+    # of these shares a first syllable with 안정성/안내/안전/안심/안녕, so the
+    # widening cannot reopen the bare 작동\s*안 defect above.
+    ("ko-defect-jakdong-an", r"작동\s*안\s*(?:하|해|한|함|했|할|되|된|됨|됐|됬|돼|될|시킴|먹혀|뜸)"),
+    # Family D - negative verdict (4.6/day). The most user-specific family in
+    # the table and the first candidate for per-user tuning, kept because two
+    # of the eleven labelled corrections are nothing but this. 별로 on its own
+    # is a degree adverb ("별로 안 급해"), so only the predicate 별로야 fires.
+    ("ko-verdict-seullop", r"슬롭"),
+    ("ko-verdict-isanghae", r"이상해"),
+    ("ko-verdict-byeolloya", r"별로야"),
+    ("ko-verdict-chonseu", r"촌스"),
+    # 구려 is the predicate "it's lousy"; 싸구려 is the noun "cheap junk", and
+    # a user saying the result must *not* look 싸구려 is passing the opposite
+    # verdict. Two of the 55 fires measured in the five-day window were this
+    # pattern inside 싸구려 in a pasted design document.
+    ("ko-verdict-guryeo", r"(?<!싸)구려"),
+    # Family E - reversal (0.4/day). The user withdraws something they asked
+    # for: "3456은 다시생각해보니까 일단 안쓰게될거같아".
+    ("ko-reversal-dasi-saenggak", r"다시\s*생각"),
+    ("ko-reversal-an-sseuge", r"안\s*쓰게"),
+    ("ko-reversal-eopdeon-geollo", r"없던\s*걸로"),
+    # Family A, the bare interjection — the least specific Korean entry in the
+    # table, so it sorts last among them. It used to sit third, which meant any
+    # correction the user prefixed with 아니 was attributed to Family A even
+    # when a sharper entry also matched: "아니 여러번 말했잖아" is stated
+    # recurrence that opens with 아니, not an interjection that mentions
+    # recurrence. The nudge fired either way, so nothing was missed; what was
+    # lost is the per-family evidence the spec relies on to drop a noisy family
+    # later, biased toward A by an unknown amount.
+    #
+    # Family A's only exclusion is 아니면: a conjunction proposing an
+    # alternative ("아니면 버셀 배포할까???"), and the first false positive
+    # anybody measured — 싸구려 against Family D's 구려 was the second.
+    # 아니야 / 아니요 / 아니지 opened four sentences in the window and every
+    # sampled one was a genuine correction, so no ending is guarded, and
+    # nothing keys on sentence mood — ground-truth quote #5 is a question and
+    # a genuine correction. The discriminator is word class.
+    ("ko-ani-muntu", r"^\s*아니(?!면)"),
+    # --- English (case-insensitive) ---------------------------------------
+    # en/ja/zh were not measured — this user's corpus is Korean — and are kept
+    # exactly as they were. Removing an unmeasured entry is a change with no
+    # evidence behind it.
     ("en-no-thats-not", r"\bno[,!.\s]+that['’]?s\s+not\b"),
     ("en-thats-not-what-i", r"that['’]?s\s+not\s+what\s+i\b"),
     ("en-not-what-i-asked", r"\bnot\s+what\s+i\s+asked\b"),

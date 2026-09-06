@@ -1,6 +1,6 @@
 ---
 name: ani
-description: Use when the user signals you misread their intent — "아니 그게 아니라", "그게 아니라", "그거 말고", "내 말은", "no, that's not what I meant", "not what I asked", "you misunderstood", "いや、そうじゃなくて", "不是这个意思" — or any rephrasing, in any language, that means "no, that's not it". Also use proactively before any non-trivial task when an ani store exists — the user's global ~/.ani or a project .ani/ overlay — so recorded correction patterns are consulted before acting, and when the user types /ani, /ani ok <id>, /ani resolve <F-id>, /ani bootstrap, or /ani git.
+description: Use when the user signals you got it wrong — a rejection ("아니", "아니 그게 아니라", "그거 말고", "내 말은", "no, that's not what I meant", "not what I asked", "you misunderstood", "いや、そうじゃなくて", "不是这个意思"), a symptom report ("프런트가 안되는데?"), a verdict on the work ("이거 좀 별로야"), a reminder they already told you ("여러번 말했잖아"), or a reversal ("다시 생각해보니 없던 걸로") — in any language, however phrased: a complaint or a bug report is a correction too, not only a rephrasing. Also use proactively before any non-trivial task when an ani store exists — the user's global ~/.ani or a project .ani/ overlay — so recorded correction patterns are consulted before acting, and when the user types /ani, /ani ok <id>, /ani resolve <F-id>, /ani bootstrap, or /ani git.
 ---
 
 # ani — the "no, that's not it" protocol

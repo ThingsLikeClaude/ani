@@ -24,36 +24,58 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
+
+# --------------------------------------------------------------------------
+# The one table (spec C2)
+# --------------------------------------------------------------------------
+# The hook owns the canonical correction vocabulary and the miner reads it,
+# because the two detect the same thing and divergence is how a fix lands in
+# one reader and not the other. The hook's form wins: Family A is anchored to
+# the start of a turn, and a literal substring table cannot express that.
+#
+# The import direction and the path handling follow ``scripts/ani_doctor.py``,
+# which already imports ``ani_trigger`` for exactly this reason.
+_HOOK_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "hooks"
+)
+try:
+    sys.dont_write_bytecode = True
+    sys.path.insert(0, _HOOK_DIR)
+    import ani_trigger  # noqa: E402
+except ImportError as exc:  # pragma: no cover - a broken install
+    # Falling back to a local copy of the table would be the two-table bug this
+    # import exists to remove, so the miner refuses to run instead.
+    raise SystemExit(
+        "ani_bootstrap: cannot import the correction table from %s (%s). "
+        "hooks/ani_trigger.py ships beside this script and owns it."
+        % (_HOOK_DIR, exc)
+    )
+finally:
+    try:
+        sys.path.remove(_HOOK_DIR)
+    except ValueError:  # pragma: no cover - defensive
+        pass
 
 # --------------------------------------------------------------------------
 # Phrase hints
 # --------------------------------------------------------------------------
-# (phrase, language). Korean is matched as a plain substring because Korean
-# agglutinates without spaces; English is matched on whitespace boundaries so
-# that "i meant" does not fire inside "hi meant".
-CORRECTION_PHRASES = [
-    ("아니 그게 아니라", "ko"),
-    ("그게 아니라", "ko"),
-    ("아니라고", "ko"),
-    ("그거 말고", "ko"),
-    ("내 말은", "ko"),
-    ("라는 뜻이었어", "ko"),
-    ("왜 자꾸", "ko"),
-    ("또 그러네", "ko"),
-    ("아니 그런 뜻이", "ko"),
-    ("no, that's not", "en"),
-    ("that's not what i", "en"),
-    ("i meant", "en"),
-    ("not what i asked", "en"),
-    ("you misunderstood", "en"),
-]
+# Correction detection is the hook's table, imported verbatim: (slug, regex),
+# most-specific first. The miner keeps no second list, so the digest labels a
+# mined moment with the same slug the live nudge would have emitted and the two
+# can be read against each other.
+CORRECTION_PHRASES = ani_trigger.CORRECTION_PHRASES
+_CORRECTION_REGEXES = ani_trigger._COMPILED_PHRASES
 
+# The positive-ack list stays here and stays literal (phrase, language). It
+# feeds the miner's advisory retro hint, never the live path, and it has never
+# been measured — so it is out of the one-table rule on purpose.
 POSITIVE_ACK_PHRASES = [
     ("좋아", "ko"),
     ("좋네", "ko"),
@@ -67,20 +89,131 @@ POSITIVE_ACK_PHRASES = [
     ("that works", "en"),
 ]
 
-# Trigger words themselves must not become cluster keywords.
+# Words that name nothing. The Korean trigger vocabulary is NOT listed here —
+# it is derived from the table below, because a hand-kept list beside the table
+# is joined to it by nothing at all and every family the table gains arrives
+# with new trigger words that leak straight into cluster keywords.
 STOPWORDS = {
-    # Korean — trigger fragments plus very common filler
-    "아니", "아니라", "아니라고", "그게", "그거", "말고", "말은", "뜻이었어",
-    "라는", "뜻이", "자꾸", "그러네", "그런", "이거", "저거", "이건", "저건",
-    "해줘", "해라", "하라고", "다시", "그리고", "근데", "그냥", "진짜", "지금",
-    "그대로", "이렇게", "저렇게", "여기", "거기",
-    # English — trigger fragments plus stopwords
+    # Korean — very common filler that names nothing
+    "이거", "저거", "이건", "저건", "해줘", "해라", "하라고", "그리고",
+    # 그게 / 그거 are the 그- half of the demonstratives already listed
+    # beside them, and they name exactly as much as 이거 does: nothing. They
+    # were shadowed only as a side effect of the derivation enumerating every
+    # fragment of 그게\s*아니라 and 그거\s*말고, which is the wrong reason —
+    # word class is this list's job, and the derived list now holds only the
+    # words an entry matches end to end.
+    "그게", "그거",
+    "근데", "그냥", "진짜", "지금", "그대로", "이렇게", "저렇게", "여기",
+    "거기",
+    # English — trigger fragments plus stopwords. The derivation below reads
+    # Hangul only, so the English half of the table is still covered by hand;
+    # English is not agglutinative and its entries are already word-bounded.
     "no", "not", "that", "thats", "what", "meant", "asked", "misunderstood",
     "you", "your", "the", "an", "is", "are", "was", "were", "be", "to", "of",
     "and", "or", "in", "on", "at", "for", "with", "this", "these", "those",
     "it", "its", "do", "did", "does", "my", "me", "but", "so", "just", "only",
     "should", "would", "could", "please", "can", "will", "have", "has",
 }
+
+# --------------------------------------------------------------------------
+# Trigger vocabulary, derived from the table it must shadow
+# --------------------------------------------------------------------------
+# A cluster of corrections about background colour is called 배경색, never
+# 아니라고: the phrase that caught a moment must never be the word that names
+# it. Two moments whose only shared token is the trigger word cluster at
+# Jaccard 1/3 — over the 0.30 threshold — and the digest then reports a
+# recurrence that never happened and tells the agent to seed `keywords` from a
+# word that describes nothing.
+#
+# The derivation reads the table the way a keyboard does, not the way its
+# author wrote it. Every entry joins its pieces with an optional whitespace
+# class, and Korean is agglutinative: what the user types is `안됨`, one token,
+# not the two single syllables `안\s*됨` splits into. So lookarounds are
+# dropped, alternations are expanded into branches, and every run of syllables
+# a branch can produce with its joints typed closed is a form to shadow —
+# `안됨`, `그게아니라`, `여러번말했`.
+#
+# Endings then attach to those forms (`다시생각` -> `다시생각해보니까`), and no
+# membership test can enumerate Korean endings, so the match is by prefix: a
+# token that starts with a trigger form is that trigger word wearing one.
+_LOOKAROUND_RE = re.compile(r"\(\?<?[=!][^()]*\)")
+_JOINT_RE = re.compile(r"\\s[*+?]|\[[^\]]*\\s[^\]]*\][*+?]")
+# Every group spelling an alternation may arrive in, not just the one the
+# table happens to use today. `(?:a|b)` is a style choice; `(a|b)` is what
+# somebody writes without thinking about it, and a derivation that only
+# knows the first reads such an entry as scaffolding and shadows none of
+# its words. The lookarounds are already gone by the time this runs, and
+# the `(?!\?)` guard keeps every other `(?...)` construct — inline flags,
+# comments, backreferences — from being mistaken for a group whose
+# contents are something a user types.
+_ALTERNATION_RE = re.compile(r"(?<!\\)\((?:\?:|\?P<[^>]*>)?(?!\?)([^()]*)\)")
+_JOINT_MARK = "\x00"
+
+
+def _expand_alternations(pattern: str) -> list:
+    """``(?:a|b)x``, ``(a|b)x`` -> ``['ax', 'bx']``: one branch per phrase."""
+    match = _ALTERNATION_RE.search(pattern)
+    if not match:
+        return [pattern]
+    branches = []
+    for choice in match.group(1).split("|"):
+        branches.extend(
+            _expand_alternations(
+                pattern[: match.start()] + choice + pattern[match.end():]
+            )
+        )
+    return branches
+
+
+def _surface_forms(pattern: str) -> set:
+    """Every Hangul word of >= 2 syllables one entry matches end to end.
+
+    A joint is something this user does not type, so ``여러\\s*번\\s*말했``
+    is the single word 여러번말했. The pieces along the way — 여러, 번말,
+    여러번 — are half a pattern, and no entry matches any of them on its own.
+    They must not be shadowed: the list is prefix-matched, so a fragment is
+    a standing ban on every word that starts with it, and 작동 or 다시 alone
+    bans 작동방식, 작동원리, 다시배포, 여러파일, 지적재산권 — 696 distinct
+    tokens of ordinary vocabulary across this user's own corpus, none of
+    which the table can match and every one of which is a keyword the
+    clusterer could have used.
+
+    Anything that is neither Hangul nor a joint is regex scaffolding and
+    breaks the phrase outright.
+    """
+    forms = set()
+    body = _JOINT_RE.sub(_JOINT_MARK, _LOOKAROUND_RE.sub("", pattern))
+    for branch in _expand_alternations(body):
+        for piece in re.split("[^가-힣" + _JOINT_MARK + "]+", branch):
+            form = piece.replace(_JOINT_MARK, "")
+            if len(form) >= 2:
+                forms.add(form)
+    return forms
+
+
+TRIGGER_SURFACE_FORMS = frozenset(
+    form
+    for _slug, _pattern in CORRECTION_PHRASES
+    for form in _surface_forms(_pattern)
+)
+
+# Prefix lookup bucketed by length: a handful of sizes, one set membership each.
+_TRIGGER_PREFIXES = tuple(
+    (size, frozenset(f for f in TRIGGER_SURFACE_FORMS if len(f) == size))
+    for size in sorted({len(f) for f in TRIGGER_SURFACE_FORMS})
+)
+
+
+def is_trigger_vocabulary(token: str) -> bool:
+    """True when this token is a word the correction table matches on."""
+    if token in STOPWORDS:
+        return True
+    for size, forms in _TRIGGER_PREFIXES:
+        if len(token) < size:
+            return False
+        if token[:size] in forms:
+            return True
+    return False
 
 # Single-char Korean particles stripped from tokens of length >= 3 (stem >= 2).
 # This is the one place the miner does more than the letter of the spec: without
@@ -200,7 +333,16 @@ def find_phrases(text: str, table) -> list:
 
 
 def is_correction(text: str) -> list:
-    return find_phrases(text, CORRECTION_PHRASES)
+    """Every slug in the hook's table that matches this turn, in table order.
+
+    Deliberately the raw text and the hook's own compiled patterns, not the
+    normalised form ``find_phrases`` uses: the miner has to answer exactly what
+    the hook would have answered on the same turn, and normalising first is a
+    second matcher wearing the first one's name.
+    """
+    if not text:
+        return []
+    return [slug for slug, regex in _CORRECTION_REGEXES if regex.search(text)]
 
 
 def is_positive_ack(text: str) -> list:
@@ -225,10 +367,10 @@ def tokenize(text: str) -> set:
     """Correction quote -> keyword token set used for clustering."""
     tokens = set()
     for raw in normalize_for_match(text).split():
-        if len(raw) < 2 or raw in STOPWORDS:
+        if len(raw) < 2 or is_trigger_vocabulary(raw):
             continue
         tok = _strip_particle(raw)
-        if len(tok) < 2 or tok in STOPWORDS:
+        if len(tok) < 2 or is_trigger_vocabulary(tok):
             continue
         tokens.add(tok)
     return tokens
@@ -358,8 +500,16 @@ def scan_file(path: Path, cutoff, stats: dict, budget: dict) -> list:
     live and can hold a single line carrying a huge tool payload, so no more
     than ``MAX_LINE_BYTES`` is ever held for a line. Oversized lines and
     messages dropped by the retention caps are counted in ``stats``.
+
+    Only prose is retained, but each retained message also records whether an
+    assistant *entry* came before it in this file — prose or a bare run of tool
+    calls. That flag is the whole of C3: a turn made of tool_use blocks alone
+    produces no text and never lands in this list, so without it a user
+    correcting an agent in the middle of tool work is indistinguishable from
+    the opening turn of a headless run.
     """
     messages = []
+    agent_entry_seen = False
     try:
         handle = path.open("rb")
     except OSError as exc:                                   # pragma: no cover
@@ -408,8 +558,14 @@ def scan_file(path: Path, cutoff, stats: dict, budget: dict) -> list:
                 content = entry.get("content")
             text = extract_text(content)
             if not text:
-                # Tool results, tool calls and empty turns land here.
+                # Tool results, tool calls and empty turns land here. An
+                # assistant turn that was nothing but tool calls contributes
+                # presence and no text: it proves the agent was working, and
+                # the quote and the stored context still come from prose, so
+                # tool arguments never reach the digest.
                 stats["non_prose_skipped"] += 1
+                if role == "assistant":
+                    agent_entry_seen = True
                 continue
 
             if role == "user" and is_machine_injected(text):
@@ -439,8 +595,11 @@ def scan_file(path: Path, cutoff, stats: dict, budget: dict) -> list:
                     "text": text,
                     "timestamp": timestamp,
                     "uuid": uuid if isinstance(uuid, str) else "",
+                    "agent_entry_before": agent_entry_seen,
                 }
             )
+            if role == "assistant":
+                agent_entry_seen = True
             kept_here += 1
             budget["messages"] += 1
     return messages
@@ -450,6 +609,13 @@ def scan_file(path: Path, cutoff, stats: dict, budget: dict) -> list:
 # Moment extraction
 # --------------------------------------------------------------------------
 def preceding_assistant(messages: list, index: int) -> str:
+    """The nearest assistant entry before ``index``, or "" if there is none.
+
+    No emptiness check here: ``scan_file`` never appends an entry whose text is
+    falsy, so a guard on it would read as the mechanism that keeps a tool-only
+    turn from supplying the quote while not being that mechanism — the
+    ``continue`` in ``scan_file`` is.
+    """
     for j in range(index - 1, -1, -1):
         if messages[j]["role"] == "assistant":
             return messages[j]["text"]
@@ -491,6 +657,13 @@ def collect_moments(session_id: str, messages: list, stats: dict = None) -> list
     pasted diff — happened to carry a trigger phrase. Those turns are the
     machine talking, they repeat verbatim across runs, and repetition is worth
     `+2`, so mining them is how noise buys itself a promotion.
+
+    What counts as an agent turn is an assistant *entry*, not assistant prose
+    (spec C3). A turn of tool calls alone says the agent was already working;
+    the quote and ``assistant_context`` still come only from prose, so such a
+    turn contributes presence, not text. A correction that genuinely opens a
+    transcript has nothing before it either way and is still dropped, which is
+    the case the filter was written for.
     """
     moments = []
     user_order = [i for i, m in enumerate(messages) if m["role"] == "user"]
@@ -509,7 +682,7 @@ def collect_moments(session_id: str, messages: list, stats: dict = None) -> list
             continue
 
         context = preceding_assistant(messages, index)
-        if not context:
+        if not context and not message.get("agent_entry_before"):
             if stats is not None:
                 stats["no_agent_context"] += 1
             continue
